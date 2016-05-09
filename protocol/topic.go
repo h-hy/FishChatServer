@@ -17,42 +17,43 @@ package protocol
 
 import (
 	"github.com/oikomi/FishChatServer/libnet"
+	"github.com/oikomi/FishChatServer/storage/mongo_store"
 	"github.com/oikomi/FishChatServer/storage/redis_store"
 )
 
-type TopicMap   map[string]*Topic
+type TopicMap map[string]*Topic
 
 type Topic struct {
-	TopicName     string
-	MsgAddr       string
-	Channel       *libnet.Channel
-	TA            *TopicAttribute
-	ClientIDList  []string
-	TSD           *redis_store.TopicCacheData
+	TopicName    string
+	MsgAddr      string
+	Channel      *libnet.Channel
+	TA           *TopicAttribute
+	ClientIDList []string
+	TSD          *redis_store.TopicCacheData
 }
 
 func NewTopic(topicName string, msgAddr string, CreaterID string, CreaterSession *libnet.Session) *Topic {
-	return &Topic {
-		TopicName    : topicName,
-		MsgAddr      : msgAddr,
-		Channel      : new(libnet.Channel),
-		TA           : NewTopicAttribute(CreaterID, CreaterSession),
-		ClientIDList : make([]string, 0),
+	return &Topic{
+		TopicName:    topicName,
+		MsgAddr:      msgAddr,
+		Channel:      new(libnet.Channel),
+		TA:           NewTopicAttribute(CreaterID, CreaterSession),
+		ClientIDList: make([]string, 0),
 	}
 }
 
-func (self *Topic)AddMember(m *redis_store.Member) {
+func (self *Topic) AddMember(m *mongo_store.Member) {
 	self.TSD.MemberList = append(self.TSD.MemberList, m)
 }
 
 type TopicAttribute struct {
-	CreaterID          string
-	CreaterSession     *libnet.Session
+	CreaterID      string
+	CreaterSession *libnet.Session
 }
 
 func NewTopicAttribute(CreaterID string, CreaterSession *libnet.Session) *TopicAttribute {
-	return &TopicAttribute {
-		CreaterID      : CreaterID,
-		CreaterSession : CreaterSession,
+	return &TopicAttribute{
+		CreaterID:      CreaterID,
+		CreaterSession: CreaterSession,
 	}
 }

@@ -17,10 +17,13 @@ package main
 
 import (
 	"flag"
-	"github.com/oikomi/FishChatServer/log"
-	"github.com/oikomi/FishChatServer/libnet"
+
 	"github.com/oikomi/FishChatServer/common"
+	"github.com/oikomi/FishChatServer/libnet"
+	"github.com/oikomi/FishChatServer/log"
 	"github.com/oikomi/FishChatServer/protocol"
+	"github.com/oikomi/FishChatServer/storage/mongo_store"
+	"github.com/oikomi/FishChatServer/storage/redis_store"
 )
 
 func init() {
@@ -29,25 +32,77 @@ func init() {
 }
 
 type ProtoProc struct {
-	gateway    *Gateway
+	gateway *Gateway
 }
 
 func NewProtoProc(gateway *Gateway) *ProtoProc {
-	return &ProtoProc {
-		gateway : gateway,
+	return &ProtoProc{
+		gateway: gateway,
 	}
 }
 
-func (self *ProtoProc)procReqMsgServer(cmd protocol.Cmd, session *libnet.Session) error {
-	//log.Info("procReqMsgServer")
-	var err error
-	msgServer := common.SelectServer(self.gateway.cfg.MsgServerList, self.gateway.cfg.MsgServerNum)
+// select a min load msg server
+func (self *ProtoProc) procGetMinLoadMsgServer() string {
+	var minload uint64
+	var minloadserver string
+	var msgServer string
 
-	resp := protocol.NewCmdSimple(protocol.SELECT_MSG_SERVER_FOR_CLIENT_CMD)
+	minload = 0xFFFFFFFFFFFFFFFF
+
+	for str, msn := range self.gateway.msgServerNumMap {
+		if minload > msn {
+			minload = msn
+			minloadserver = str
+		}
+	}
+	msgServer = minloadserver
+	return msgServer
+}
+
+func (self *ProtoProc) procLogin(cmd protocol.Cmd, session *libnet.Session) error {
+	//log.Info("procLogin")
+	var err error
+	var uuid string
+	var msgServer string
+
+	ClientID := cmd.GetArgs()[0]
+	ClientType := cmd.GetArgs()[1]
+	ClientPwd := cmd.GetArgs()[2]
+
+	// get the session cache
+	sessionCacheData, err := self.gateway.sessionCache.Get(ClientID)
+	if sessionCacheData != nil {
+		log.Warningf("ID %s already login", ClientID)
+
+		msgServer = sessionCacheData.MsgServerAddr
+		uuid = sessionCacheData.ID
+	} else {
+		// choose msg server and allocate UUID
+		msgServer = self.procGetMinLoadMsgServer()
+		uuid = common.NewV4().String()
+		// get the session store to check whether registered
+		sessionStoreData, _ := self.gateway.mongoStore.GetSessionFromCid(ClientID)
+		if sessionStoreData == nil {
+			log.Warningf("ID %s not registered", ClientID)
+
+			// for store data
+			sessionStoreData = mongo_store.NewSessionStoreData(ClientID, ClientPwd, ClientType)
+			log.Info(sessionStoreData)
+			common.StoreData(self.gateway.mongoStore, sessionStoreData)
+		}
+		// for cache data, MsgServer MUST update local & remote addr.
+		sessionCacheData = redis_store.NewSessionCacheData(sessionStoreData, session.Conn().RemoteAddr().String(), msgServer, uuid)
+		log.Info(sessionCacheData)
+		common.StoreData(self.gateway.sessionCache, sessionCacheData)
+	}
+	//
+	resp := protocol.NewCmdSimple(protocol.RSP_LOGIN_CMD)
+	resp.AddArg(protocol.RSP_SUCCESS)
+	resp.AddArg(uuid)
 	resp.AddArg(msgServer)
-	
+
 	log.Info("Resp | ", resp)
-	
+
 	if session != nil {
 		err = session.Send(libnet.Json(resp))
 		if err != nil {

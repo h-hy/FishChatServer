@@ -16,8 +16,10 @@
 package main
 
 import (
-	"os"
 	"encoding/json"
+	"os"
+	"time"
+
 	"github.com/oikomi/FishChatServer/log"
 )
 
@@ -26,17 +28,31 @@ type GatewayConfig struct {
 	TransportProtocols string
 	Listen             string
 	LogFile            string
+	UUID               string
 	MsgServerList      []string
 	MsgServerNum       int
-}
-
-func NewGatewayConfig(configFile string) *GatewayConfig {
-	return &GatewayConfig {
-		configFile : configFile,
+	Redis              struct {
+		Addr           string
+		Port           string
+		ConnectTimeout time.Duration
+		ReadTimeout    time.Duration
+		WriteTimeout   time.Duration
+	}
+	Mongo struct {
+		Addr     string
+		Port     string
+		User     string
+		Password string
 	}
 }
 
-func (self *GatewayConfig)LoadConfig() error {
+func NewGatewayConfig(configFile string) *GatewayConfig {
+	return &GatewayConfig{
+		configFile: configFile,
+	}
+}
+
+func (self *GatewayConfig) LoadConfig() error {
 	file, err := os.Open(self.configFile)
 	if err != nil {
 		log.Error(err.Error())
@@ -52,7 +68,7 @@ func (self *GatewayConfig)LoadConfig() error {
 	return nil
 }
 
-func (self *GatewayConfig)DumpConfig() {
-	//fmt.Printf("Mode: %s\nListen: %s\nServer: %s\nLogfile: %s\n", 
+func (self *GatewayConfig) DumpConfig() {
+	//fmt.Printf("Mode: %s\nListen: %s\nServer: %s\nLogfile: %s\n",
 	//cfg.Mode, cfg.Listen, cfg.Server, cfg.Logfile)
 }

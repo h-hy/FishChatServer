@@ -16,10 +16,14 @@
 package main
 
 import (
-	"fmt"
 	"flag"
-	"github.com/oikomi/FishChatServer/log"
+	"fmt"
+	"time"
+
+	"github.com/oikomi/FishChatServer/base"
 	"github.com/oikomi/FishChatServer/libnet"
+	"github.com/oikomi/FishChatServer/log"
+	"github.com/oikomi/FishChatServer/storage/redis_store"
 )
 
 /*
@@ -52,7 +56,7 @@ func init() {
 	flag.Set("log_dir", "false")
 }
 
-var InputConfFile = flag.String("conf_file", "gateway.json", "input conf file name") 
+var InputConfFile = flag.String("conf_file", "gateway.json", "input conf file name")
 
 func handleSession(gw *Gateway, session *libnet.Session) {
 	session.Process(func(msg *libnet.InBuffer) error {
@@ -60,10 +64,10 @@ func handleSession(gw *Gateway, session *libnet.Session) {
 		if err != nil {
 			log.Error(err.Error())
 		}
-		
+
 		return nil
 	})
-}  
+}
 
 func main() {
 	version()
@@ -75,8 +79,19 @@ func main() {
 		log.Error(err.Error())
 		return
 	}
-	
-	gw := NewGateway(cfg)
+
+	rs := redis_store.NewRedisStore(&redis_store.RedisStoreOptions{
+		Network:        "tcp",
+		Address:        cfg.Redis.Addr + cfg.Redis.Port,
+		ConnectTimeout: time.Duration(cfg.Redis.ConnectTimeout) * time.Millisecond,
+		ReadTimeout:    time.Duration(cfg.Redis.ReadTimeout) * time.Millisecond,
+		WriteTimeout:   time.Duration(cfg.Redis.WriteTimeout) * time.Millisecond,
+		Database:       1,
+		KeyPrefix:      base.COMM_PREFIX,
+	})
+
+	gw := NewGateway(cfg, rs)
+	gw.subscribeChannels()
 
 	gw.server, err = libnet.Listen(cfg.TransportProtocols, cfg.Listen)
 	if err != nil {
@@ -87,7 +102,7 @@ func main() {
 
 	gw.server.Serve(func(session *libnet.Session) {
 		log.Info("client ", session.Conn().RemoteAddr().String(), " | come in")
-		
+
 		go handleSession(gw, session)
 	})
 }

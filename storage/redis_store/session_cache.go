@@ -16,45 +16,62 @@
 package redis_store
 
 import (
+	"encoding/json"
 	"sync"
 	"time"
-	"encoding/json"
+
 	"github.com/garyburd/redigo/redis"
+	"github.com/oikomi/FishChatServer/storage/mongo_store"
 )
 
 type SessionCache struct {
-	RS       *RedisStore
-	rwMutex  sync.Mutex
+	RS      *RedisStore
+	rwMutex sync.Mutex
 }
 
 func NewSessionCache(RS *RedisStore) *SessionCache {
-	return &SessionCache {
-		RS    : RS,
+	return &SessionCache{
+		RS: RS,
 	}
 }
 
 type SessionCacheData struct {
-	ClientID      string
+	/*
+		ClientID   string
+		ClientPwd  string
+		ClientName string
+		ClientType string
+		TopicList  []string
+	*/
+	mongo_store.SessionStoreData
+
+	Alive         bool
 	ClientAddr    string
 	MsgServerAddr string
 	ID            string
 	MaxAge        time.Duration
 }
 
-func NewSessionCacheData(ClientID string, ClientAddr string, MsgServerAddr string, ID string) *SessionCacheData {
-	return &SessionCacheData {
-		ClientID      : ClientID,
-		ClientAddr    : ClientAddr,
-		MsgServerAddr : MsgServerAddr,
-		ID            : ID,
+func NewSessionCacheData(store_data *mongo_store.SessionStoreData, ClientAddr string, MsgServerAddr string, ID string) *SessionCacheData {
+	cacheData := &SessionCacheData{
+		ClientAddr:    ClientAddr,
+		MsgServerAddr: MsgServerAddr,
+		ID:            ID,
 	}
+	cacheData.ClientID = store_data.ClientID
+	cacheData.ClientPwd = store_data.ClientPwd
+	cacheData.ClientName = store_data.ClientName
+	cacheData.ClientType = store_data.ClientType
+	cacheData.TopicList = store_data.TopicList
+
+	return cacheData
 }
 
-func (self *SessionCacheData)checkClientID(clientID string) bool {
+func (self *SessionCacheData) checkClientID(clientID string) bool {
 	return true
 }
 
-func (self *SessionCacheData)StoreKey() string {
+func (self *SessionCacheData) StoreKey() string {
 	return self.ClientID
 }
 
@@ -119,6 +136,7 @@ func (self *SessionCache) Delete(id string) error {
 	}
 	return nil
 }
+
 // Clear all sessions from the store. Requires the use of a key
 // prefix in the store options, otherwise the method refuses to delete all keys.
 func (self *SessionCache) Clear() error {
@@ -140,6 +158,7 @@ func (self *SessionCache) Clear() error {
 	}
 	return nil
 }
+
 // Get the number of session keys in the store. Requires the use of a
 // key prefix in the store options, otherwise returns -1 (cannot tell
 // session keys from other keys).

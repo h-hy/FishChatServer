@@ -2,9 +2,26 @@
 	"TransportProtocols" : "tcp",
 	"Listen"             : "0.0.0.0:17000",
 	"LogFile"            : "gateway.log",
+	"UUID"               : "17000",
 	"MsgServerList"      : [
 		"127.0.0.1:19000",
 		"127.0.0.1:19001"
 	],
-	"MsgServerNum"       : 2
+	"MsgServerNum"       : 2,
+
+	"Redis"                    : { 
+		"Addr" : "127.0.0.1", 
+		"Port" : ":6379",
+		"ConnectTimeout" : 2000,
+		"ReadTimeout" : 1000,
+		"WriteTimeout" : 1000
+	},
+	
+	"Mongo"              : { 
+			"Addr"      : "127.0.0.1", 
+			"Port"      : ":27017",
+			"User"      : "",
+			"Password"  : ""
+
+	}
 }

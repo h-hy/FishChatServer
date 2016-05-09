@@ -17,6 +17,7 @@ package controllers
 
 import (
 	"encoding/json"
+
 	"github.com/astaxie/beego"
 	"github.com/oikomi/FishChatServer/monitor/conf"
 )
@@ -34,7 +35,7 @@ func (this *MonitorController) Post() {
 		return
 	}
 	ifo := NewInfoOperation()
-	
+
 	switch action {
 	case conf.ACTION_LOGIN:
 		var ob LoginPostData
@@ -46,7 +47,7 @@ func (this *MonitorController) Post() {
 			return
 		}
 		this.Data["json"] = ts
-		this.ServeJson()
+		this.ServeJSON()
 	}
 }
 
@@ -58,7 +59,7 @@ func (this *MonitorController) Get() {
 		this.Abort("400")
 		return
 	}
-	
+
 	ifo := NewInfoOperation()
 	switch action {
 	case conf.ACTION_GET_MSG_SERVER_DATA:
@@ -66,32 +67,27 @@ func (this *MonitorController) Get() {
 	}
 }
 
-
 type InfoOperation struct {
-
 }
 
 func NewInfoOperation() *InfoOperation {
-	return &InfoOperation {
-	}
+	return &InfoOperation{}
 }
 
-func (this *InfoOperation)login(username, password string)  (*LoginStatus, error) {
+func (this *InfoOperation) login(username, password string) (*LoginStatus, error) {
 	ts := NewLoginStatus()
 	ts.Status = "1"
-	
+
 	if username == "admin" && password == "admin" {
 		ts.Status = "0"
 	}
-	
+
 	return &ts, nil
 }
 
-func (this *InfoOperation)getMsgServerData()  (*MsgServerData, error) {
+func (this *InfoOperation) getMsgServerData() (*MsgServerData, error) {
 	ts := NewMsgServerData()
 	ts.Status = "1"
-	
-	
+
 	return &ts, nil
 }
-

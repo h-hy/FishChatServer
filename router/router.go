@@ -18,8 +18,12 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/oikomi/FishChatServer/log"
+	"time"
+
+	"github.com/oikomi/FishChatServer/base"
 	"github.com/oikomi/FishChatServer/libnet"
+	"github.com/oikomi/FishChatServer/log"
+	"github.com/oikomi/FishChatServer/storage/redis_store"
 )
 
 /*
@@ -52,7 +56,7 @@ func version() {
 	fmt.Printf("router version %s Copyright (c) 2014-2015 Harold Miao (miaohong@miaohong.org)  \n", VERSION)
 }
 
-var InputConfFile = flag.String("conf_file", "router.json", "input conf file name")   
+var InputConfFile = flag.String("conf_file", "router.json", "input conf file name")
 
 func main() {
 	version()
@@ -64,18 +68,27 @@ func main() {
 		log.Error(err.Error())
 		return
 	}
-	
+
 	server, err := libnet.Listen(cfg.TransportProtocols, cfg.Listen)
 	if err != nil {
 		log.Error(err.Error())
 		return
 	}
 	log.Info("server start: ", server.Listener().Addr().String())
-	
-	r := NewRouter(cfg)
+
+	rs := redis_store.NewRedisStore(&redis_store.RedisStoreOptions{
+		Network:        "tcp",
+		Address:        cfg.Redis.Addr + cfg.Redis.Port,
+		ConnectTimeout: time.Duration(cfg.Redis.ConnectTimeout) * time.Millisecond,
+		ReadTimeout:    time.Duration(cfg.Redis.ReadTimeout) * time.Millisecond,
+		WriteTimeout:   time.Duration(cfg.Redis.WriteTimeout) * time.Millisecond,
+		Database:       1,
+		KeyPrefix:      base.COMM_PREFIX,
+	})
+	r := NewRouter(cfg, rs)
 	//TODO not use go
 	go r.subscribeChannels()
 	server.Serve(func(session *libnet.Session) {
-	
+
 	})
 }

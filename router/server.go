@@ -16,45 +16,38 @@
 package main
 
 import (
-	"sync"
-	"time"
 	"encoding/json"
-	"github.com/oikomi/FishChatServer/log"
-	"github.com/oikomi/FishChatServer/base"
+	"sync"
+
 	"github.com/oikomi/FishChatServer/libnet"
+	"github.com/oikomi/FishChatServer/log"
 	"github.com/oikomi/FishChatServer/protocol"
-	"github.com/oikomi/FishChatServer/storage/redis_store"
 	"github.com/oikomi/FishChatServer/storage/mongo_store"
+	"github.com/oikomi/FishChatServer/storage/redis_store"
 )
 
 type Router struct {
-	cfg                 *RouterConfig
-	msgServerClientMap  map[string]*libnet.Session
-	sessionCache        *redis_store.SessionCache
-	mongoStore          *mongo_store.MongoStore
-	topicServerMap      map[string]string
-	readMutex           sync.Mutex
-}   
+	cfg                *RouterConfig
+	msgServerClientMap map[string]*libnet.Session
+	sessionCache       *redis_store.SessionCache
+	topicCache         *redis_store.TopicCache
+	mongoStore         *mongo_store.MongoStore
+	topicServerMap     map[string]string
+	readMutex          sync.Mutex
+}
 
-func NewRouter(cfg *RouterConfig) *Router {
-	return &Router {
-		cfg                : cfg,
-		msgServerClientMap : make(map[string]*libnet.Session),
-		sessionCache       : redis_store.NewSessionCache(redis_store.NewRedisStore(&redis_store.RedisStoreOptions {
-					Network :   "tcp",
-					Address :   cfg.Redis.Addr + cfg.Redis.Port,
-					ConnectTimeout : time.Duration(cfg.Redis.ConnectTimeout)*time.Millisecond,
-					ReadTimeout : time.Duration(cfg.Redis.ReadTimeout)*time.Millisecond,
-					WriteTimeout : time.Duration(cfg.Redis.WriteTimeout)*time.Millisecond,
-					Database :  1,
-					KeyPrefix : base.COMM_PREFIX,
-		})),
-		mongoStore         : mongo_store.NewMongoStore(cfg.Mongo.Addr, cfg.Mongo.Port, cfg.Mongo.User, cfg.Mongo.Password),
-		topicServerMap     : make(map[string]string),
+func NewRouter(cfg *RouterConfig, rs *redis_store.RedisStore) *Router {
+	return &Router{
+		cfg:                cfg,
+		msgServerClientMap: make(map[string]*libnet.Session),
+		sessionCache:       redis_store.NewSessionCache(rs),
+		topicCache:         redis_store.NewTopicCache(rs),
+		mongoStore:         mongo_store.NewMongoStore(cfg.Mongo.Addr, cfg.Mongo.Port, cfg.Mongo.User, cfg.Mongo.Password),
+		topicServerMap:     make(map[string]string),
 	}
 }
 
-func (self *Router)connectMsgServer(ms string) (*libnet.Session, error) {
+func (self *Router) connectMsgServer(ms string) (*libnet.Session, error) {
 	client, err := libnet.Dial("tcp", ms)
 	if err != nil {
 		log.Error(err.Error())
@@ -64,9 +57,9 @@ func (self *Router)connectMsgServer(ms string) (*libnet.Session, error) {
 	return client, err
 }
 
-func (self *Router)handleMsgServerClient(msc *libnet.Session) {
+func (self *Router) handleMsgServerClient(msc *libnet.Session) {
 	msc.Process(func(msg *libnet.InBuffer) error {
-		log.Info("msg_server", msc.Conn().RemoteAddr().String()," say: ", string(msg.Data))
+		log.Info("msg_server", msc.Conn().RemoteAddr().String(), " say: ", string(msg.Data))
 		var c protocol.CmdInternal
 		pp := NewProtoProc(self)
 		err := json.Unmarshal(msg.Data, &c)
@@ -75,33 +68,24 @@ func (self *Router)handleMsgServerClient(msc *libnet.Session) {
 			return err
 		}
 		switch c.GetCmdName() {
-			case protocol.SEND_MESSAGE_P2P_CMD:
-				err := pp.procSendMsgP2P(c, msc)
-				if err != nil {
-					log.Warning(err.Error())
-				}
-			case protocol.CREATE_TOPIC_CMD:
-				err := pp.procCreateTopic(c, msc)
-				if err != nil {
-					log.Warning(err.Error())
-				}
-			case protocol.JOIN_TOPIC_CMD:
-				err := pp.procJoinTopic(c, msc)
-				if err != nil {
-					log.Warning(err.Error())
-				}
-			case protocol.SEND_MESSAGE_TOPIC_CMD:
-				err := pp.procSendMsgTopic(c, msc)
-				if err != nil {
-					log.Warning(err.Error())
-				}
-				
+		case protocol.REQ_SEND_P2P_MSG_CMD:
+			err := pp.procSendMsgP2P(c, msc)
+			if err != nil {
+				log.Warning(err.Error())
 			}
+
+		case protocol.ROUTE_SEND_TOPIC_MSG_CMD:
+			err := pp.procSendMsgTopic(c, msc)
+			if err != nil {
+				log.Warning(err.Error())
+			}
+
+		}
 		return nil
 	})
 }
 
-func (self *Router)subscribeChannels() error {
+func (self *Router) subscribeChannels() error {
 	log.Info("route start to subscribeChannels")
 	for _, ms := range self.cfg.MsgServerList {
 		msgServerClient, err := self.connectMsgServer(ms)
@@ -112,23 +96,23 @@ func (self *Router)subscribeChannels() error {
 		cmd := protocol.NewCmdSimple(protocol.SUBSCRIBE_CHANNEL_CMD)
 		cmd.AddArg(protocol.SYSCTRL_SEND)
 		cmd.AddArg(self.cfg.UUID)
-		
+
 		err = msgServerClient.Send(libnet.Json(cmd))
 		if err != nil {
 			log.Error(err.Error())
 			return err
 		}
-		
+
 		cmd = protocol.NewCmdSimple(protocol.SUBSCRIBE_CHANNEL_CMD)
 		cmd.AddArg(protocol.SYSCTRL_TOPIC_SYNC)
 		cmd.AddArg(self.cfg.UUID)
-		
+
 		err = msgServerClient.Send(libnet.Json(cmd))
 		if err != nil {
 			log.Error(err.Error())
 			return err
 		}
-		
+
 		self.msgServerClientMap[ms] = msgServerClient
 	}
 

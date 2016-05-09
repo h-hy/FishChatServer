@@ -17,26 +17,52 @@ package mongo_store
 
 type Member struct {
 	ID   string
+	Name string
+	Type string
 }
 
-func NewMember(ID string) *Member {
-	return &Member {
-		ID : ID,
+func NewMember(ID string, Name string, Type string) *Member {
+	return &Member{
+		ID:   ID,
+		Name: Name,
+		Type: Type,
 	}
 }
 
-type TopicStoreData struct {	
-	TopicName      string      `bson:"TopicName"`
-	CreaterID      string      `bson:"CreaterID"`
-	MemberList     []*Member   `bson:"MemberList"`
-	MsgServerAddr  string      `bson:"MsgServerAddr"`
+type TopicStoreData struct {
+	TopicName  string    `bson:"TopicName"`
+	CreaterID  string    `bson:"CreaterID"`
+	MemberList []*Member `bson:"MemberList"`
+	//MsgServerAddr  string      `bson:"MsgServerAddr"`
 }
 
-func NewTopicStoreData(topicName string, createrID string, msgServerAddr string) *TopicStoreData {
+func NewTopicStoreData(topicName string, createrID string /*, msgServerAddr string*/) *TopicStoreData {
 	return &TopicStoreData{
-		TopicName     : topicName,
-		CreaterID     : createrID,
-		MemberList    : make([]*Member, 0),
-		MsgServerAddr : msgServerAddr,
+		TopicName:  topicName,
+		CreaterID:  createrID,
+		MemberList: make([]*Member, 0),
+		//MsgServerAddr: msgServerAddr,
+	}
+}
+
+func (self *TopicStoreData) AddMember(m *Member) {
+	self.MemberList = append(self.MemberList, m)
+}
+
+func (self *TopicStoreData) MemberExist(t string) bool {
+	for _, m := range self.MemberList {
+		if m.ID == t {
+			return true
+		}
+	}
+	return false
+}
+
+func (self *TopicStoreData) RemoveMember(t string) {
+	for i, m := range self.MemberList {
+		if m.ID == t {
+			self.MemberList = append(self.MemberList[:i], self.MemberList[i+1:]...)
+			break
+		}
 	}
 }

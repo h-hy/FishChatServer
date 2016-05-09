@@ -15,10 +15,45 @@
 
 package mongo_store
 
-
 type SessionStoreData struct {
-	ClientID       string  `bson:"ClientID"`
-	ClientAddr     string  `bson:"ClientAddr"`
-	MsgServerAddr  string  `bson:"MsgServerAddr"`
-	Alive          bool    `bson:"Alive"`
+	ClientID   string   `bson:"ClientID"`
+	ClientPwd  string   `bson:"ClientPwd"`
+	ClientName string   `bson:"ClientName"`
+	ClientType string   `bson:"ClientType"`
+	TopicList  []string `bson:"TopicList"`
+}
+
+func NewSessionStoreData(clientID string, clientPwd string, clientType string) *SessionStoreData {
+	return &SessionStoreData{
+		ClientID:   clientID,
+		ClientPwd:  clientPwd,
+		ClientType: clientType,
+		TopicList:  make([]string, 0),
+	}
+}
+
+func (self *SessionStoreData) AddTopic(t string) {
+	self.TopicList = append(self.TopicList, t)
+}
+
+func (self *SessionStoreData) GetTopics() []string {
+	return self.TopicList
+}
+
+func (self *SessionStoreData) TopicExist(t string) bool {
+	for _, name := range self.TopicList {
+		if name == t {
+			return true
+		}
+	}
+	return false
+}
+
+func (self *SessionStoreData) RemoveTopic(t string) {
+	for i, name := range self.TopicList {
+		if name == t {
+			self.TopicList = append(self.TopicList[:i], self.TopicList[i+1:]...)
+			break
+		}
+	}
 }

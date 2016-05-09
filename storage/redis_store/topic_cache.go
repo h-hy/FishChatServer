@@ -16,56 +16,48 @@
 package redis_store
 
 import (
+	"encoding/json"
 	"sync"
 	"time"
-	"encoding/json"
+
 	"github.com/garyburd/redigo/redis"
+	"github.com/oikomi/FishChatServer/storage/mongo_store"
 )
 
 type TopicCache struct {
-	RS       *RedisStore
-	rwMutex  sync.Mutex
+	RS      *RedisStore
+	rwMutex sync.Mutex
 }
 
 func NewTopicCache(RS *RedisStore) *TopicCache {
-	return &TopicCache {
-		RS    : RS,
+	return &TopicCache{
+		RS: RS,
 	}
 }
 
 type TopicCacheData struct {
-	TopicName     string
-	CreaterID     string
-	MemberList    []*Member
-	MsgServerAddr string
-	MaxAge        time.Duration
+	mongo_store.TopicStoreData
+
+	//MsgServerAddr     string
+	AliveMemberNumMap map[string]uint32 // AliveMemberNumMap[server] means number of alive members in this server
+	MaxAge            time.Duration
 }
 
-type Member struct {
-	ID   string
-}
-
-func NewMember(ID string) *Member {
-	return &Member {
-		ID : ID,
+func NewTopicCacheData(session *mongo_store.TopicStoreData) *TopicCacheData {
+	cacheData := &TopicCacheData{
+		AliveMemberNumMap: make(map[string]uint32),
+		/*MsgServerAddr: MsgServerAddr,*/
 	}
+
+	cacheData.TopicName = session.TopicName
+	cacheData.CreaterID = session.CreaterID
+	cacheData.MemberList = session.MemberList
+
+	return cacheData
 }
 
-func NewTopicCacheData(TopicName string, CreaterID string, MsgServerAddr string) *TopicCacheData {
-	return &TopicCacheData {
-		TopicName     : TopicName,
-		CreaterID     : CreaterID,
-		MemberList    : make([]*Member, 0),
-		MsgServerAddr : MsgServerAddr,
-	}
-}
-
-func (self *TopicCacheData)StoreKey() string {
+func (self *TopicCacheData) StoreKey() string {
 	return self.TopicName
-}
-
-func (self *TopicCacheData)AddMember(m *Member) {
-	self.MemberList = append(self.MemberList, m)
 }
 
 // Get the session from the store.
@@ -151,6 +143,7 @@ func (self *TopicCache) Clear() error {
 	}
 	return nil
 }
+
 // Get the number of session keys in the store. Requires the use of a
 // key prefix in the store options, otherwise returns -1 (cannot tell
 // session keys from other keys).

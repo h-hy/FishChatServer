@@ -21,5 +21,14 @@ import (
 
 var (
 	NOTOPIC         = errors.New("NO TOPIC")
-	CMD_NOT_CORRECT = errors.New("CMD NOT CORRECT")
+	SYNTAX_ERROR    = errors.New("SYNTAX ERROT")
+	NOT_LOGIN       = errors.New("NOT LOGIN")
+	DENY_ACCESS     = errors.New("DENY ACCESS")
+	TOPIC_EXIST     = errors.New("TOPIC EXIST")
+	TOPIC_NOT_EXIST = errors.New("TOPIC NOT EXIST")
+	MONGO_ACCESS    = errors.New("MONGO NOT ACCESSABLE")
+	NOT_ONLINE      = errors.New("NOT ONLINE")
+	NOT_MEMBER      = errors.New("NOT MEMBER")
+	MEMBER_EXIST    = errors.New("MEMBER EXIST")
+	
 )
