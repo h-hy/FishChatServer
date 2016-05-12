@@ -15,12 +15,17 @@
 
 package protocol
 
+const (
+	DEV_TYPE_WATCH  = "D"
+	DEV_TYPE_CLIENT = "C"
+)
+
 // status of p2p msg
 const (
-	P2P_ACK_FALSE   = 0 // msg server received
-	P2P_ACK_SENT    = 1 // sent
-	P2P_ACK_REACHED = 2 // msg reach the peer(Send2ID)
-	P2P_ACK_READ    = 3 // receiver read this msg
+	P2P_ACK_FALSE   = "FALSE"   // msg server received
+	P2P_ACK_SENT    = "SENT"    // sent
+	P2P_ACK_REACHED = "REACHED" // msg reach the peer(Send2ID)
+	P2P_ACK_READ    = "READ"    // receiver read this msg
 )
 
 const (

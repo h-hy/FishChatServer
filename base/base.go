@@ -23,7 +23,7 @@ import (
 type ChannelMap map[string]*ChannelState
 type SessionMap map[string]*libnet.Session
 
-type AckMap map[string]map[string]int
+type AckMap map[string]map[string]string
 
 const COMM_PREFIX = "IM"
 

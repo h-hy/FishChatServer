@@ -134,7 +134,7 @@ func (self *ProtoProc) procLogin(cmd protocol.Cmd, session *libnet.Session) erro
 		log.Warningf("no ID : %s", ClientID)
 	} else if sessionCacheData.ID != uuid {
 		log.Warningf("ID(%s) & uuid(%s) not matched", ClientID, uuid)
-		err = NOT_LOGIN
+		err = common.NOT_LOGIN
 	}
 	if err == nil {
 		resp.AddArg(protocol.RSP_SUCCESS)
@@ -240,7 +240,7 @@ func (self *ProtoProc) procLogout(cmd protocol.Cmd, session *libnet.Session) err
    arg0: uuid // 发送方知道uuid对应的已发送的消息已送达
    arg1: SENT/READ // 发送方知道uuid对应的消息状态：已送达/已读
 */
-func (self *ProtoProc) procP2PAckStatus(fromID string, uuid string, status int) error {
+func (self *ProtoProc) procP2PAckStatus(fromID string, uuid string, status string) error {
 	log.Info("procP2PAck")
 	//var err error
 
@@ -375,7 +375,7 @@ func (self *ProtoProc) procSendMessageP2P(cmd protocol.Cmd, session *libnet.Sess
 	uuid := common.NewV4().String()
 	log.Info("uuid : ", uuid)
 	if self.msgServer.p2pAckStatus[fromID] == nil {
-		self.msgServer.p2pAckStatus[fromID] = make(map[string]int)
+		self.msgServer.p2pAckStatus[fromID] = make(map[string]string)
 	}
 	self.procP2PAckStatus(fromID, uuid, protocol.P2P_ACK_FALSE)
 
@@ -496,22 +496,22 @@ func (self *ProtoProc) procCreateTopic(cmd protocol.Cmd, session *libnet.Session
 	resp := protocol.NewCmdSimple(protocol.RSP_CREATE_TOPIC_CMD)
 
 	if len(cmd.GetArgs()) != 2 {
-		err = SYNTAX_ERROR
+		err = common.SYNTAX_ERROR
 	} else
 	// only DEV_TYPE_CLIENT CAN create topic
-	if ClientType != mongo_store.DEV_TYPE_CLIENT {
-		err = DENY_ACCESS
+	if ClientType != protocol.DEV_TYPE_CLIENT {
+		err = common.DENY_ACCESS
 	} else {
 		// check whether the topic exist
 		topicCacheData, _ := self.msgServer.topicCache.Get(topicName)
 		if topicCacheData != nil {
 			log.Warningf("TOPIC %s exist", topicName)
-			err = TOPIC_EXIST
+			err = common.TOPIC_EXIST
 		} else {
 			topicStoreData, _ := self.msgServer.mongoStore.GetTopicFromCid(topicName)
 			if topicStoreData != nil {
 				log.Warningf("TOPIC %s exist", topicName)
-				err = TOPIC_EXIST
+				err = common.TOPIC_EXIST
 			} else {
 				// create the topic store
 				topicStoreData = mongo_store.NewTopicStoreData(topicName, ClientID)
@@ -625,33 +625,33 @@ func (self *ProtoProc) procAdd2Topic(cmd protocol.Cmd, session *libnet.Session) 
 	resp := protocol.NewCmdSimple(protocol.RSP_ADD_2_TOPIC_CMD)
 
 	if len(cmd.GetArgs()) != 3 {
-		err = SYNTAX_ERROR
+		err = common.SYNTAX_ERROR
 	} else
 	// only DEV_TYPE_CLIENT CAN create topic
-	if ClientType != mongo_store.DEV_TYPE_CLIENT {
-		err = DENY_ACCESS
+	if ClientType != protocol.DEV_TYPE_CLIENT {
+		err = common.DENY_ACCESS
 	} else {
 		// check whether the topic exist
 		topicCacheData, _ := self.msgServer.topicCache.Get(topicName)
 		if topicCacheData == nil {
 			log.Warningf("TOPIC %s not exist", topicName)
-			err = TOPIC_NOT_EXIST
+			err = common.TOPIC_NOT_EXIST
 		} else
 		// only topic creater can do this
 		if topicCacheData.CreaterID != ClientID {
 			log.Warningf("ClientID %s is not creater of topic %s", ClientID, topicName)
-			err = DENY_ACCESS
+			err = common.DENY_ACCESS
 		} else {
 			// New Member MUST be online
 			sessionCacheData, err := self.msgServer.sessionCache.Get(mID)
 			if sessionCacheData == nil {
 				log.Warningf("Client %s not online", mID)
-				err = NOT_ONLINE
+				err = common.NOT_ONLINE
 			} else
 			// Watch can only be added in ONE topic
-			if sessionCacheData.ClientType == mongo_store.DEV_TYPE_WATCH && len(sessionCacheData.TopicList) != 1 {
+			if sessionCacheData.ClientType == protocol.DEV_TYPE_WATCH && len(sessionCacheData.TopicList) != 1 {
 				log.Warningf("Watch %s is in topic %s", mID, sessionCacheData.TopicList[0])
-				err = DENY_ACCESS
+				err = common.DENY_ACCESS
 			} else {
 				// sessioin cache and store
 				sessionCacheData.AddTopic(topicName)
@@ -718,13 +718,13 @@ func (self *ProtoProc) procKickTopic(cmd protocol.Cmd, session *libnet.Session) 
 	resp := protocol.NewCmdSimple(protocol.RSP_KICK_TOPIC_CMD)
 
 	if len(cmd.GetArgs()) != 2 {
-		err = SYNTAX_ERROR
+		err = common.SYNTAX_ERROR
 		goto ErrOut
 	}
 
 	// only DEV_TYPE_CLIENT CAN do this
-	if ClientType != mongo_store.DEV_TYPE_CLIENT {
-		err = DENY_ACCESS
+	if ClientType != protocol.DEV_TYPE_CLIENT {
+		err = common.DENY_ACCESS
 		goto ErrOut
 	}
 
@@ -732,20 +732,20 @@ func (self *ProtoProc) procKickTopic(cmd protocol.Cmd, session *libnet.Session) 
 	topicCacheData, err = self.msgServer.topicCache.Get(topicName)
 	if topicCacheData == nil {
 		log.Warningf("TOPIC %s not exist", topicName)
-		err = TOPIC_NOT_EXIST
+		err = common.TOPIC_NOT_EXIST
 		goto ErrOut
 	}
 
 	// only topic creater can do this
 	if topicCacheData.CreaterID != ClientID {
 		log.Warningf("ClientID %s is not creater of topic %s", ClientID, topicName)
-		err = DENY_ACCESS
+		err = common.DENY_ACCESS
 		goto ErrOut
 	}
 
 	if !topicCacheData.MemberExist(mID) {
 		log.Warningf("member %s is not in topic %s", mID, topicName)
-		err = NOT_MEMBER
+		err = common.NOT_MEMBER
 		goto ErrOut
 	}
 	// update topic cache and store
@@ -840,13 +840,13 @@ func (self *ProtoProc) procSendTopicMsg(cmd protocol.Cmd, session *libnet.Sessio
 	ClientID := session.State.(*base.SessionState).ClientID
 	ClientType := session.State.(*base.SessionState).ClientType
 
-	if ClientType == mongo_store.DEV_TYPE_CLIENT {
+	if ClientType == protocol.DEV_TYPE_CLIENT {
 		if len(cmd.GetArgs()) != 2 {
-			err = SYNTAX_ERROR
+			err = common.SYNTAX_ERROR
 			goto ErrOut
 		}
 	} else if len(cmd.GetArgs()) != 1 {
-		err = SYNTAX_ERROR
+		err = common.SYNTAX_ERROR
 		goto ErrOut
 	}
 
@@ -854,9 +854,9 @@ func (self *ProtoProc) procSendTopicMsg(cmd protocol.Cmd, session *libnet.Sessio
 	sessionCacheData, err = self.msgServer.sessionCache.Get(ClientID)
 	if sessionCacheData == nil {
 		log.Errorf("ID %s cache missing", ClientID)
-		err = NOT_ONLINE
+		err = common.NOT_ONLINE
 		goto ErrOut
-	} else if ClientType == mongo_store.DEV_TYPE_WATCH {
+	} else if ClientType == protocol.DEV_TYPE_WATCH {
 		topicName = sessionCacheData.GetTopics()[0]
 	} else {
 		topicName = cmd.GetArgs()[1]
@@ -866,7 +866,7 @@ func (self *ProtoProc) procSendTopicMsg(cmd protocol.Cmd, session *libnet.Sessio
 	topicCacheData, err = self.msgServer.topicCache.Get(topicName)
 	if topicCacheData == nil {
 		log.Warningf("TOPIC %s not exist", topicName)
-		err = TOPIC_NOT_EXIST
+		err = common.TOPIC_NOT_EXIST
 	} else {
 		topic_msg_resp := protocol.NewCmdSimple(cmd.GetCmdName())
 		topic_msg_resp.AddArg(msg)
@@ -940,7 +940,7 @@ func (self *ProtoProc) procRouteTopicMsg(cmd protocol.Cmd, session *libnet.Sessi
 	topicCacheData, err := self.msgServer.topicCache.Get(topicName)
 	if topicCacheData == nil {
 		log.Warningf("TOPIC %s not exist: %s", topicName, err.Error())
-		return TOPIC_NOT_EXIST
+		return common.TOPIC_NOT_EXIST
 	}
 
 	cmd.ChangeCmdName(protocol.REQ_SEND_TOPIC_MSG_CMD)
@@ -959,6 +959,16 @@ func (self *ProtoProc) procRouteTopicMsg(cmd protocol.Cmd, session *libnet.Sessi
 	return nil
 }
 
+/*
+   client -> MsgServer
+       REQ_JOIN_TOPIC_CMD
+       arg0: TopicName     //群组名
+       arg1: ClientName    //用户在Topic中的Name, 比如老爸/老妈
+
+   MsgServer -> client
+       RSP_JOIN_TOPIC_CMD
+       arg0: SUCCESS/FAILED
+*/
 func (self *ProtoProc) procJoinTopic(cmd protocol.Cmd, session *libnet.Session) error {
 	log.Info("procJoinTopic")
 	var err error
@@ -976,7 +986,7 @@ func (self *ProtoProc) procJoinTopic(cmd protocol.Cmd, session *libnet.Session) 
 	resp := protocol.NewCmdSimple(protocol.RSP_JOIN_TOPIC_CMD)
 
 	if len(cmd.GetArgs()) != 2 {
-		err = SYNTAX_ERROR
+		err = common.SYNTAX_ERROR
 		goto ErrOut
 	}
 
@@ -984,31 +994,31 @@ func (self *ProtoProc) procJoinTopic(cmd protocol.Cmd, session *libnet.Session) 
 	topicCacheData, err = self.msgServer.topicCache.Get(topicName)
 	if topicCacheData == nil {
 		log.Warningf("TOPIC %s not exist", topicName)
-		err = TOPIC_NOT_EXIST
+		err = common.TOPIC_NOT_EXIST
 		goto ErrOut
 	}
 
 	if topicCacheData.MemberExist(clientID) {
 		log.Warningf("ClientID %s exists in topic %s", clientID, topicName)
-		err = MEMBER_EXIST
+		err = common.MEMBER_EXIST
 		goto ErrOut
 	}
 
 	sessionCacheData, err = self.msgServer.sessionCache.Get(clientID)
 	if sessionCacheData == nil {
 		log.Warningf("Client %s not online", clientID)
-		err = NOT_ONLINE
+		err = common.NOT_ONLINE
 		goto ErrOut
 	}
 	// Watch can only be added in ONE topic
-	if clientType == mongo_store.DEV_TYPE_WATCH && len(sessionCacheData.TopicList) != 1 {
+	if clientType == protocol.DEV_TYPE_WATCH && len(sessionCacheData.TopicList) != 1 {
 		log.Warningf("Watch %s is in topic %s", clientID, sessionCacheData.TopicList[0])
-		err = DENY_ACCESS
+		err = common.DENY_ACCESS
 		goto ErrOut
 
 	}
 
-	// sessioin cache and store
+	// session cache and store
 	sessionCacheData.AddTopic(topicName)
 	err = self.msgServer.sessionCache.Set(sessionCacheData)
 	if err != nil {
@@ -1074,7 +1084,7 @@ func (self *ProtoProc) procGetTopicList(cmd protocol.Cmd, session *libnet.Sessio
 	sessionCacheData, err := self.msgServer.sessionCache.Get(clientID)
 	if sessionCacheData == nil {
 		log.Warningf("Client %s not online", clientID)
-		err = NOT_ONLINE
+		err = common.NOT_ONLINE
 		goto ErrOut
 	}
 ErrOut:
@@ -1126,12 +1136,12 @@ func (self *ProtoProc) procGetTopicMember(cmd protocol.Cmd, session *libnet.Sess
 	topicCacheData, err := self.msgServer.topicCache.Get(topicName)
 	if topicCacheData == nil {
 		log.Warningf("TOPIC %s not exist", topicName)
-		err = TOPIC_NOT_EXIST
+		err = common.TOPIC_NOT_EXIST
 		goto ErrOut
 	}
 	if topicCacheData.MemberExist(clientID) == false {
 		log.Warningf("%s not the member of topic %d", clientID, topicName)
-		err = DENY_ACCESS
+		err = common.DENY_ACCESS
 		goto ErrOut
 	}
 ErrOut:
@@ -1159,7 +1169,7 @@ func (self *ProtoProc) procP2pAck(cmd protocol.Cmd, session *libnet.Session) err
 	var err error
 	clientID := cmd.GetArgs()[0]
 	uuid := cmd.GetArgs()[1]
-	status, err := strconv.Atoi(cmd.GetArgs()[2])
+	status := cmd.GetArgs()[2]
 	self.msgServer.p2pAckMutex.Lock()
 	defer self.msgServer.p2pAckMutex.Unlock()
 
