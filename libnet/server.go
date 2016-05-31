@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net"
 	"sync/atomic"
+
 	"github.com/oikomi/FishChatServer/libnet/syncs"
 )
 
@@ -15,8 +16,8 @@ var (
 )
 
 var (
-	DefaultSendChanSize   = 1024                     // Default session send chan buffer size.
-	DefaultConnBufferSize = 1024                     // Default session read buffer size.
+	DefaultSendChanSize   = 1024                  // Default session send chan buffer size.
+	DefaultConnBufferSize = 1024                  // Default session read buffer size.
 	DefaultProtocol       = PacketN(4, BigEndian) // Default protocol for utility APIs.
 )
 
@@ -31,15 +32,15 @@ func Listen(network, address string) (*Server, error) {
 
 // Server.
 type Server struct {
-	// About network
-	listener    net.Listener
-	protocol    Protocol
-	broadcaster *Broadcaster
-
 	// About sessions
 	maxSessionId uint64
 	sessions     map[uint64]*Session
 	sessionMutex syncs.Mutex
+
+	// About network
+	listener    net.Listener
+	protocol    Protocol
+	broadcaster *Broadcaster
 
 	// About server start and stop
 	stopFlag int32

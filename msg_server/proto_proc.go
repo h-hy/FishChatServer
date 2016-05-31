@@ -74,7 +74,7 @@ func (self *ProtoProc) procPing(cmd protocol.Cmd, session *libnet.Session) error
        REQ_SEND_P2P_MSG_CMD
        arg0: Msg           //消息内容
        arg1: FromID        //发送方用户ID
-       arg2: uuid          //MsgServer分配的消息uuid，可选，如果提供了则须IND_ACK_P2P_MSG_CMD(ClientID, uuid)
+       arg2: uuid          //MsgServer分配的消息uuid，可选，如果提供了则须IND_ACK_P2P_STATUS_CMD(ClientID, uuid)
 */
 func (self *ProtoProc) procOfflineMsg(session *libnet.Session, ID string) error {
 	var err error
@@ -88,18 +88,31 @@ func (self *ProtoProc) procOfflineMsg(session *libnet.Session, ID string) error 
 			return err
 		}
 		for _, v := range omrd.MsgList {
-			resp := protocol.NewCmdSimple(protocol.REQ_SEND_P2P_MSG_CMD)
-			resp.AddArg(v.Msg)
-			resp.AddArg(v.FromID)
-			resp.AddArg(v.Uuid)
+			if v.Msg == protocol.IND_ACK_P2P_STATUS_CMD {
+				resp := protocol.NewCmdSimple(protocol.IND_ACK_P2P_STATUS_CMD)
+				resp.AddArg(v.Uuid)
+				resp.AddArg(v.FromID) // v.FromID is status
+				if self.msgServer.sessions[ID] != nil {
+					self.msgServer.sessions[ID].Send(libnet.Json(resp))
+					if err != nil {
+						log.Error(err.Error())
+						return err
+					}
+				}
+			} else {
+				resp := protocol.NewCmdSimple(protocol.REQ_SEND_P2P_MSG_CMD)
+				resp.AddArg(v.Msg)
+				resp.AddArg(v.FromID)
+				resp.AddArg(v.Uuid)
 
-			self.msgServer.p2pAckStatus[v.FromID][v.Uuid] = protocol.P2P_ACK_SENT
-
-			if self.msgServer.sessions[ID] != nil {
-				self.msgServer.sessions[ID].Send(libnet.Json(resp))
-				if err != nil {
-					log.Error(err.Error())
-					return err
+				if self.msgServer.sessions[ID] != nil {
+					self.msgServer.sessions[ID].Send(libnet.Json(resp))
+					if err != nil {
+						log.Error(err.Error())
+						return err
+					} else {
+						self.procP2PAckStatus(v.FromID, v.Uuid, protocol.P2P_ACK_SENT)
+					}
 				}
 			}
 		}
@@ -152,7 +165,8 @@ func (self *ProtoProc) procLogin(cmd protocol.Cmd, session *libnet.Session) erro
 	// update the session cache
 	sessionCacheData.ClientAddr = session.Conn().RemoteAddr().String()
 	sessionCacheData.MsgServerAddr = self.msgServer.cfg.LocalIP
-	common.StoreData(self.msgServer.sessionCache, sessionCacheData)
+	sessionCacheData.Alive = true
+	self.msgServer.sessionCache.Set(sessionCacheData)
 
 	log.Info(sessionCacheData)
 
@@ -208,7 +222,6 @@ func (self *ProtoProc) procLogin(cmd protocol.Cmd, session *libnet.Session) erro
 /*
    device/client -> MsgServer
        REQ_LOGOUT_CMD
-       arg0: ClientID        //用户ID
 
    MsgServer -> device/client
        RSP_LOGOUT_CMD
@@ -218,7 +231,8 @@ func (self *ProtoProc) procLogin(cmd protocol.Cmd, session *libnet.Session) erro
 func (self *ProtoProc) procLogout(cmd protocol.Cmd, session *libnet.Session) error {
 	log.Info("procLogout")
 	var err error
-	ClientID := cmd.GetArgs()[0]
+
+	ClientID := session.State.(*base.SessionState).ClientID
 
 	resp := protocol.NewCmdSimple(protocol.RSP_LOGOUT_CMD)
 	resp.AddArg(protocol.RSP_SUCCESS)
@@ -236,88 +250,85 @@ func (self *ProtoProc) procLogout(cmd protocol.Cmd, session *libnet.Session) err
 }
 
 /*
-   IND_ACK_P2P_MSG_CMD
+   IND_ACK_P2P_STATUS_CMD
    arg0: uuid // 发送方知道uuid对应的已发送的消息已送达
    arg1: SENT/READ // 发送方知道uuid对应的消息状态：已送达/已读
 */
 func (self *ProtoProc) procP2PAckStatus(fromID string, uuid string, status string) error {
-	log.Info("procP2PAck")
+	log.Info("procP2PAckStatus")
 	//var err error
 
-	self.msgServer.p2pAckMutex.Lock()
-	defer self.msgServer.p2pAckMutex.Unlock()
+	p2psd, err := self.msgServer.p2pStatusCache.Get(fromID)
+	if p2psd == nil {
+		p2psd = redis_store.NewP2pStatusCacheData(fromID)
+	}
+	p2psd.Set(uuid, status)
 
-	self.msgServer.p2pAckStatus[fromID][uuid] = status
+	if status == protocol.P2P_ACK_FALSE {
+		return nil
+	}
 
-	return nil
-	//TODO : in fact, msg sender maybe offline of different msg server, so p2pAckStatus should be in REDIS CACHE
-	/*
-		if status == protocol.P2P_ACK_FALSE {
-			return nil
+	sessionCacheData, err := self.msgServer.sessionCache.Get(fromID)
+	if sessionCacheData == nil {
+		log.Warningf("no cache ID : %s, err: %s", fromID, err.Error())
+		sessionStoreData, err := self.msgServer.mongoStore.GetSessionFromCid(fromID)
+		if sessionStoreData == nil {
+			// not registered
+			log.Warningf("no store ID : %s, err: %s", fromID, err.Error())
+			self.msgServer.p2pStatusCache.Delete(fromID)
+			return err
 		}
+	}
+	if sessionCacheData == nil || sessionCacheData.Alive == false {
+		// offline
+		log.Info(fromID + " | is offline")
+		omrd, err := common.GetOfflineMsgFromOwnerName(self.msgServer.offlineMsgCache, fromID)
+		log.Info(omrd)
+		if err != nil {
+			log.Error(err.Error())
+			return err
+		}
+		if omrd == nil {
+			omrd = redis_store.NewOfflineMsgCacheData(fromID)
+		}
+		omrd.AddMsg(redis_store.NewOfflineMsgData(protocol.IND_ACK_P2P_STATUS_CMD /*fromID*/, status, uuid))
 
-		sessionCacheData, err := common.GetSessionFromCID(self.msgServer.sessionCache, fromID)
-		if sessionCacheData == nil {
-			log.Warningf("no cache ID : %s, err: %s", fromID, err.Error())
-			sessionStoreData, err := common.GetSessionFromCID(self.msgServer.mongoStore, fromID)
-			if sessionStoreData == nil {
-				// not registered
-				log.Warningf("no store ID : %s, err: %s", fromID, err.Error())
-				return err
-			}
-			// offline
-			log.Info(fromID + " | is offline")
-			omrd, err := common.GetOfflineMsgFromOwnerName(self.msgServer.offlineMsgCache, fromID)
-			log.Info(omrd)
-			if err != nil {
-				log.Error(err.Error())
-				return err
-			}
-			if omrd == nil {
-				omrd = redis_store.NewOfflineMsgCacheData(fromID)
-			}
-			omrd.AddMsg(redis_store.NewOfflineMsgData(protocol.IND_ACK_P2P_MSG_CMD+strconv.Itoa(status), fromID, uuid))
+		err = self.msgServer.offlineMsgCache.Set(omrd)
 
-			err = self.msgServer.offlineMsgCache.Set(omrd)
+		if err != nil {
+			log.Error(err.Error())
+			return err
+		}
+	} else {
+		// online
+		resp := protocol.NewCmdSimple(protocol.IND_ACK_P2P_STATUS_CMD)
+		resp.AddArg(uuid)
+		resp.AddArg(status)
+		log.Info(fromID + " | is online")
+		if sessionCacheData.MsgServerAddr == self.msgServer.cfg.LocalIP {
+			log.Info("in the same server")
 
-			if err != nil {
-				log.Error(err.Error())
-				return err
+			if self.msgServer.sessions[fromID] != nil {
+				self.msgServer.sessions[fromID].Send(libnet.Json(resp))
+				if err != nil {
+					log.Error(err.Error())
+					return err
+				}
 			}
 		} else {
-			// online
-			log.Info(fromID + " | is online")
-			if sessionCacheData.MsgServerAddr == self.msgServer.cfg.LocalIP {
-				log.Info("in the same server")
-				resp := protocol.NewCmdSimple(protocol.IND_ACK_P2P_MSG_CMD)
-				resp.AddArg(uuid)
-				resp.AddArg(status)
-
-				if self.msgServer.sessions[send2ID] != nil {
-					self.msgServer.sessions[send2ID].Send(libnet.Json(resp))
-					if err != nil {
-						log.Error(err.Error())
-						return err
-					}
-					self.msgServer.p2pAckStatus[fromID][uuid] = protocol.P2P_ACK_SENT
-				}
-			} else {
-				if self.msgServer.channels[protocol.SYSCTRL_SEND] != nil {
-					cmd.AddArg(fromID)
-					//add uuid
-					cmd.AddArg(uuid)
-					_, err = self.msgServer.channels[protocol.SYSCTRL_SEND].Channel.Broadcast(libnet.Json(cmd))
-					if err != nil {
-						log.Error(err.Error())
-						return err
-					}
-					self.msgServer.p2pAckStatus[fromID][uuid] = protocol.P2P_ACK_SENT
+			log.Info("not in the same server")
+			if self.msgServer.channels[protocol.SYSCTRL_SEND] != nil {
+				resp.AddArg(fromID)
+				_, err = self.msgServer.channels[protocol.SYSCTRL_SEND].Channel.Broadcast(libnet.Json(resp))
+				if err != nil {
+					log.Error(err.Error())
+					return err
 				}
 			}
 		}
+	}
 
-		return nil
-	*/
+	return nil
 }
 
 /*
@@ -332,7 +343,7 @@ func (self *ProtoProc) procP2PAckStatus(fromID string, uuid string, status strin
        arg0: SUCCESS/FAILED
        arg1: uuid // MsgServer分配的消息uuid，发送方根据此uuid确定该消息状态
 
-       IND_ACK_P2P_MSG_CMD
+       IND_ACK_P2P_STATUS_CMD
        arg0: uuid // 发送方知道uuid对应的已发送的消息已送达
        arg1: SENT/READ // 发送方知道uuid对应的消息状态：已送达/已读
 
@@ -356,37 +367,54 @@ func (self *ProtoProc) procP2PAckStatus(fromID string, uuid string, status strin
        REQ_SEND_P2P_MSG_CMD
        arg0: Msg           //消息内容
        arg1: FromID        //发送方用户ID
-       arg2: uuid          //MsgServer分配的消息uuid，可选，如果提供了则须IND_ACK_P2P_MSG_CMD(ClientID, uuid)
+       arg2: uuid          //MsgServer分配的消息uuid，可选，如果提供了则须IND_ACK_P2P_STATUS_CMD(ClientID, uuid)
 */
 
 func (self *ProtoProc) procSendMessageP2P(cmd protocol.Cmd, session *libnet.Session) error {
 	log.Info("procSendMessageP2P")
 	var err error
-	send2ID := cmd.GetArgs()[0]
-	send2Msg := cmd.GetArgs()[1]
+	var sessionCacheData *redis_store.SessionCacheData
+	var sessionStoreData *mongo_store.SessionStoreData
+	var uuid string
+	var send2ID string
+	var send2Msg string
+
 	fromID := session.State.(*base.SessionState).ClientID
-	store_session, err := self.msgServer.sessionCache.Get(send2ID)
-	if err != nil {
-		log.Warningf("no ID : %s", send2ID)
 
-		return err
+	resp := protocol.NewCmdSimple(protocol.RSP_SEND_P2P_MSG_CMD)
+
+	if len(cmd.GetArgs()) != 2 {
+		log.Warningf("syntax error: (id,msg) needed")
+		err = common.SYNTAX_ERROR
+		goto errout
 	}
 
-	uuid := common.NewV4().String()
+	send2ID = cmd.GetArgs()[0]
+	send2Msg = cmd.GetArgs()[1]
+
+	sessionCacheData, err = self.msgServer.sessionCache.Get(send2ID)
+	if sessionCacheData == nil {
+		sessionStoreData, err = self.msgServer.mongoStore.GetSessionFromCid(send2ID)
+		if sessionStoreData == nil {
+			log.Warningf("send2ID %s not found", send2ID)
+			err = common.NOTFOUNT
+			goto errout
+		}
+	}
+
+	uuid = common.NewV4().String()
 	log.Info("uuid : ", uuid)
-	if self.msgServer.p2pAckStatus[fromID] == nil {
-		self.msgServer.p2pAckStatus[fromID] = make(map[string]string)
-	}
+
 	self.procP2PAckStatus(fromID, uuid, protocol.P2P_ACK_FALSE)
 
-	if self.msgServer.sessions[send2ID] == nil {
+	if sessionCacheData == nil || sessionCacheData.Alive == false {
 		//offline
-		log.Info(send2ID + " | is offline")
-		omrd, err := common.GetOfflineMsgFromOwnerName(self.msgServer.offlineMsgCache, send2ID)
+		log.Info("procSendMessageP2P: " + send2ID + " | is offline")
+
+		omrd, err := self.msgServer.offlineMsgCache.Get(send2ID)
 		log.Info(omrd)
 		if err != nil {
 			log.Error(err.Error())
-			return err
 		}
 		if omrd == nil {
 			omrd = redis_store.NewOfflineMsgCacheData(send2ID)
@@ -397,27 +425,26 @@ func (self *ProtoProc) procSendMessageP2P(cmd protocol.Cmd, session *libnet.Sess
 
 		if err != nil {
 			log.Error(err.Error())
-			return err
+			goto errout
 		}
-	}
-
-	if store_session.MsgServerAddr == self.msgServer.cfg.LocalIP {
-		log.Info("in the same server")
-		resp := protocol.NewCmdSimple(protocol.REQ_SEND_P2P_MSG_CMD)
-		resp.AddArg(send2Msg)
-		resp.AddArg(fromID)
+	} else if sessionCacheData.MsgServerAddr == self.msgServer.cfg.LocalIP {
+		log.Info("procSendMessageP2P: in the same server")
+		req := protocol.NewCmdSimple(protocol.REQ_SEND_P2P_MSG_CMD)
+		req.AddArg(send2Msg)
+		req.AddArg(fromID)
 		// add uuid
-		resp.AddArg(uuid)
+		req.AddArg(uuid)
 
 		if self.msgServer.sessions[send2ID] != nil {
-			self.msgServer.sessions[send2ID].Send(libnet.Json(resp))
+			self.msgServer.sessions[send2ID].Send(libnet.Json(req))
 			if err != nil {
 				log.Error(err.Error())
-				return err
+				goto errout
 			}
 			self.procP2PAckStatus(fromID, uuid, protocol.P2P_ACK_SENT)
 		}
 	} else {
+		log.Info("procSendMessageP2P: not in the same server")
 		if self.msgServer.channels[protocol.SYSCTRL_SEND] != nil {
 			cmd.AddArg(fromID)
 			//add uuid
@@ -425,13 +452,24 @@ func (self *ProtoProc) procSendMessageP2P(cmd protocol.Cmd, session *libnet.Sess
 			_, err = self.msgServer.channels[protocol.SYSCTRL_SEND].Channel.Broadcast(libnet.Json(cmd))
 			if err != nil {
 				log.Error(err.Error())
-				return err
+				goto errout
 			}
-			self.procP2PAckStatus(fromID, uuid, protocol.P2P_ACK_SENT)
+			//self.procP2PAckStatus(fromID, uuid, protocol.P2P_ACK_SENT)
 		}
 	}
+errout:
+	if err != nil {
+		resp.AddArg(err.Error())
+	} else {
+		resp.AddArg(protocol.RSP_SUCCESS)
+		resp.AddArg(uuid)
+	}
+	err = session.Send(libnet.Json(resp))
+	if err != nil {
+		log.Error(err.Error())
+	}
 
-	return nil
+	return err
 }
 
 /*
@@ -447,32 +485,29 @@ func (self *ProtoProc) procSendMessageP2P(cmd protocol.Cmd, session *libnet.Sess
        REQ_SEND_P2P_MSG_CMD
        arg0: Msg           //消息内容
        arg1: FromID        //发送方用户ID
-       arg2: uuid          //MsgServer分配的消息uuid，可选，如果提供了则须IND_ACK_P2P_MSG_CMD(ClientID, uuid)
+       arg2: uuid          //MsgServer分配的消息uuid，可选，如果提供了则须IND_ACK_P2P_STATUS_CMD(ClientID, uuid)
 */
 func (self *ProtoProc) procRouteMessageP2P(cmd protocol.Cmd, session *libnet.Session) error {
 	log.Info("procRouteMessageP2P")
 	var err error
+
 	send2ID := cmd.GetArgs()[0]
 	send2Msg := cmd.GetArgs()[1]
 	fromID := cmd.GetArgs()[2]
 	uuid := cmd.GetArgs()[3]
-	_, err = self.msgServer.sessionCache.Get(send2ID)
-	if err != nil {
-		log.Warningf("no ID : %s", send2ID)
-
-		return err
-	}
-
-	resp := protocol.NewCmdSimple(protocol.REQ_SEND_P2P_MSG_CMD)
-	resp.AddArg(send2Msg)
-	resp.AddArg(fromID)
-	// add uuid
-	resp.AddArg(uuid)
 
 	if self.msgServer.sessions[send2ID] != nil {
-		self.msgServer.sessions[send2ID].Send(libnet.Json(resp))
+		resp := protocol.NewCmdSimple(protocol.REQ_SEND_P2P_MSG_CMD)
+		resp.AddArg(send2Msg)
+		resp.AddArg(fromID)
+		// add uuid
+		resp.AddArg(uuid)
+
+		err = self.msgServer.sessions[send2ID].Send(libnet.Json(resp))
 		if err != nil {
 			log.Fatalln(err.Error())
+		} else {
+			self.procP2PAckStatus(fromID, uuid, protocol.P2P_ACK_SENT)
 		}
 	}
 
@@ -505,31 +540,39 @@ func (self *ProtoProc) procCreateTopic(cmd protocol.Cmd, session *libnet.Session
 		// check whether the topic exist
 		topicCacheData, _ := self.msgServer.topicCache.Get(topicName)
 		if topicCacheData != nil {
-			log.Warningf("TOPIC %s exist", topicName)
+			log.Infof("TOPIC %s exist in CACHE", topicName)
 			err = common.TOPIC_EXIST
 		} else {
+			log.Infof("TOPIC %s not exist in CACHE", topicName)
 			topicStoreData, _ := self.msgServer.mongoStore.GetTopicFromCid(topicName)
 			if topicStoreData != nil {
-				log.Warningf("TOPIC %s exist", topicName)
+				log.Infof("TOPIC %s exist in STORE", topicName)
 				err = common.TOPIC_EXIST
 			} else {
+				log.Infof("TOPIC %s not exist in STORE", topicName)
+
 				// create the topic store
+				log.Infof("Create topic %s in STORE", topicName)
 				topicStoreData = mongo_store.NewTopicStoreData(topicName, ClientID)
-				member := mongo_store.NewMember(ClientID, ClientName, ClientType)
-				topicStoreData.AddMember(member)
-				err = common.StoreData(self.msgServer.mongoStore, topicStoreData)
+				err = self.msgServer.mongoStore.Set(topicStoreData)
 				if err != nil {
 					log.Error(err.Error())
 					goto ErrOut
 				}
+				log.Infof("topic %s created in STORE", topicName)
+
 				// create the topic cache
+				log.Infof("Create topic %s in CACHE", topicName)
 				topicCacheData = redis_store.NewTopicCacheData(topicStoreData)
-				topicCacheData.AddMember(member)
-				err = common.StoreData(self.msgServer.topicCache, topicCacheData)
+				err = self.msgServer.topicCache.Set(topicCacheData)
 				if err != nil {
 					log.Error(err.Error())
 					goto ErrOut
 				}
+				log.Infof("topic %s created in CACHE", topicName)
+
+				member := mongo_store.NewMember(ClientID, ClientName, ClientType)
+				err = self.msgServer.procJoinTopic(member, topicName)
 
 			}
 		}
@@ -634,7 +677,7 @@ func (self *ProtoProc) procAdd2Topic(cmd protocol.Cmd, session *libnet.Session) 
 		// check whether the topic exist
 		topicCacheData, _ := self.msgServer.topicCache.Get(topicName)
 		if topicCacheData == nil {
-			log.Warningf("TOPIC %s not exist", topicName)
+			log.Infof("TOPIC %s not exist in CACHE", topicName)
 			err = common.TOPIC_NOT_EXIST
 		} else
 		// only topic creater can do this
@@ -643,42 +686,17 @@ func (self *ProtoProc) procAdd2Topic(cmd protocol.Cmd, session *libnet.Session) 
 			err = common.DENY_ACCESS
 		} else {
 			// New Member MUST be online
-			sessionCacheData, err := self.msgServer.sessionCache.Get(mID)
+			sessionCacheData, _ := self.msgServer.sessionCache.Get(mID)
 			if sessionCacheData == nil {
 				log.Warningf("Client %s not online", mID)
 				err = common.NOT_ONLINE
-			} else
-			// Watch can only be added in ONE topic
-			if sessionCacheData.ClientType == protocol.DEV_TYPE_WATCH && len(sessionCacheData.TopicList) != 1 {
-				log.Warningf("Watch %s is in topic %s", mID, sessionCacheData.TopicList[0])
-				err = common.DENY_ACCESS
 			} else {
-				// sessioin cache and store
-				sessionCacheData.AddTopic(topicName)
-				if err = self.msgServer.sessionCache.Set(sessionCacheData); err != nil {
-					log.Error(err.Error())
-				} else if err = self.msgServer.mongoStore.Set(sessionCacheData.SessionStoreData); err != nil {
-					log.Error(err.Error())
-				} else {
-					// topic cache and store
-					member := mongo_store.NewMember(mID, mName, sessionCacheData.ClientType)
-					topicCacheData.AddMember(member)
-					err = self.msgServer.topicCache.Set(topicCacheData)
-					if err != nil {
-						log.Error(err.Error())
-						goto ErrOut
-					}
-					err = self.msgServer.mongoStore.Set(topicCacheData.TopicStoreData)
-					if err != nil {
-						log.Error(err.Error())
-						goto ErrOut
-					}
-				}
+				member := mongo_store.NewMember(mID, mName, sessionCacheData.ClientType)
+				err = self.msgServer.procJoinTopic(member, topicName)
 			}
 		}
 	}
 
-ErrOut:
 	if err != nil {
 		resp.AddArg(err.Error())
 	} else {
@@ -706,8 +724,6 @@ func (self *ProtoProc) procKickTopic(cmd protocol.Cmd, session *libnet.Session) 
 	log.Info("procKickTopic")
 	var err error
 	var topicCacheData *redis_store.TopicCacheData
-	var sessionCacheData *redis_store.SessionCacheData
-	var sessionStoreData *mongo_store.SessionStoreData
 
 	topicName := cmd.GetArgs()[0]
 	mID := cmd.GetArgs()[1]
@@ -733,59 +749,96 @@ func (self *ProtoProc) procKickTopic(cmd protocol.Cmd, session *libnet.Session) 
 	if topicCacheData == nil {
 		log.Warningf("TOPIC %s not exist", topicName)
 		err = common.TOPIC_NOT_EXIST
-		goto ErrOut
-	}
-
+	} else
 	// only topic creater can do this
 	if topicCacheData.CreaterID != ClientID {
 		log.Warningf("ClientID %s is not creater of topic %s", ClientID, topicName)
 		err = common.DENY_ACCESS
-		goto ErrOut
-	}
-
-	if !topicCacheData.MemberExist(mID) {
-		log.Warningf("member %s is not in topic %s", mID, topicName)
-		err = common.NOT_MEMBER
-		goto ErrOut
-	}
-	// update topic cache and store
-	topicCacheData.RemoveMember(mID)
-	err = self.msgServer.topicCache.Set(topicCacheData)
-	if err != nil {
-		log.Error(err.Error())
-		goto ErrOut
-	}
-	err = self.msgServer.mongoStore.Set(topicCacheData.TopicStoreData)
-	if err != nil {
-		log.Error(err.Error())
-		goto ErrOut
-	}
-
-	// update session cache and store
-	sessionStoreData, err = self.msgServer.mongoStore.GetSessionFromCid(mID)
-	if sessionStoreData == nil {
-		log.Warningf("ID %s not registered", mID)
 	} else {
-		log.Warningf("remove topic from store of Client %s", mID)
-		sessionStoreData.RemoveTopic(topicName)
-		err = self.msgServer.mongoStore.Set(sessionStoreData)
-		if err != nil {
-			log.Error(err.Error())
-			goto ErrOut
-		}
-		sessionCacheData, err = self.msgServer.sessionCache.Get(mID)
-		if sessionCacheData != nil {
-			log.Warningf("remove topic from cache of Client %s", mID)
-			sessionCacheData.RemoveTopic(topicName)
-			err = self.msgServer.sessionCache.Set(sessionCacheData)
-			if err != nil {
-				log.Error(err.Error())
-				goto ErrOut
-			}
-		}
+		err = self.msgServer.procQuitTopic(mID, topicName)
 	}
 
 ErrOut:
+	if err != nil {
+		resp.AddArg(err.Error())
+	} else {
+		resp.AddArg(protocol.RSP_SUCCESS)
+	}
+	err = session.Send(libnet.Json(resp))
+	if err != nil {
+		log.Error(err.Error())
+	}
+
+	return err
+}
+
+/*
+   client -> MsgServer
+       REQ_JOIN_TOPIC_CMD
+       arg0: TopicName     //群组名
+       arg1: ClientName    //用户在Topic中的Name, 比如老爸/老妈
+
+   MsgServer -> client
+       RSP_JOIN_TOPIC_CMD
+       arg0: SUCCESS/FAILED
+*/
+func (self *ProtoProc) procJoinTopic(cmd protocol.Cmd, session *libnet.Session) error {
+	log.Info("procJoinTopic")
+	var err error
+
+	if len(cmd.GetArgs()) != 2 {
+		err = common.SYNTAX_ERROR
+	} else {
+		topicName := cmd.GetArgs()[0]
+		clientName := cmd.GetArgs()[1]
+
+		clientID := session.State.(*base.SessionState).ClientID
+		clientType := session.State.(*base.SessionState).ClientType
+
+		member := mongo_store.NewMember(clientID, clientName, clientType)
+		err = self.msgServer.procJoinTopic(member, topicName)
+	}
+
+	resp := protocol.NewCmdSimple(protocol.RSP_JOIN_TOPIC_CMD)
+
+	if err != nil {
+		resp.AddArg(err.Error())
+	} else {
+		resp.AddArg(protocol.RSP_SUCCESS)
+	}
+	err = session.Send(libnet.Json(resp))
+	if err != nil {
+		log.Error(err.Error())
+	}
+
+	return err
+}
+
+/*
+   client -> MsgServer
+       REQ_QUIT_TOPIC_CMD
+       arg0: TopicName     //群组名
+
+   MsgServer -> client
+       RSP_QUIT_TOPIC_CMD
+       arg0: SUCCESS/ERROR
+*/
+func (self *ProtoProc) procQuitTopic(cmd protocol.Cmd, session *libnet.Session) error {
+	log.Info("procQuitTopic")
+	var err error
+
+	if len(cmd.GetArgs()) != 1 {
+		err = common.SYNTAX_ERROR
+	} else {
+		topicName := cmd.GetArgs()[0]
+
+		clientID := session.State.(*base.SessionState).ClientID
+
+		err = self.msgServer.procQuitTopic(clientID, topicName)
+	}
+
+	resp := protocol.NewCmdSimple(protocol.RSP_QUIT_TOPIC_CMD)
+
 	if err != nil {
 		resp.AddArg(err.Error())
 	} else {
@@ -887,7 +940,7 @@ func (self *ProtoProc) procSendTopicMsg(cmd protocol.Cmd, session *libnet.Sessio
 			}
 		}
 		if self.msgServer.channels[protocol.SYSCTRL_SEND] != nil {
-			topic_msg_resp.ChangeCmdName(protocol.ROUTE_SEND_TOPIC_MSG_CMD)
+			//topic_msg_resp.ChangeCmdName(protocol.ROUTE_SEND_TOPIC_MSG_CMD)
 			for ip, num := range topicCacheData.AliveMemberNumMap {
 				if num > 0 {
 					log.Warningf("topic %s has %d member(s) in ip %s", topicName, num, ip)
@@ -960,106 +1013,6 @@ func (self *ProtoProc) procRouteTopicMsg(cmd protocol.Cmd, session *libnet.Sessi
 }
 
 /*
-   client -> MsgServer
-       REQ_JOIN_TOPIC_CMD
-       arg0: TopicName     //群组名
-       arg1: ClientName    //用户在Topic中的Name, 比如老爸/老妈
-
-   MsgServer -> client
-       RSP_JOIN_TOPIC_CMD
-       arg0: SUCCESS/FAILED
-*/
-func (self *ProtoProc) procJoinTopic(cmd protocol.Cmd, session *libnet.Session) error {
-	log.Info("procJoinTopic")
-	var err error
-	var topicCacheData *redis_store.TopicCacheData
-	var sessionCacheData *redis_store.SessionCacheData
-	//	var sessionStoreData *mongo_store.SessionStoreData
-	var member *mongo_store.Member
-
-	topicName := cmd.GetArgs()[0]
-	clientName := cmd.GetArgs()[1]
-
-	clientID := session.State.(*base.SessionState).ClientID
-	clientType := session.State.(*base.SessionState).ClientType
-
-	resp := protocol.NewCmdSimple(protocol.RSP_JOIN_TOPIC_CMD)
-
-	if len(cmd.GetArgs()) != 2 {
-		err = common.SYNTAX_ERROR
-		goto ErrOut
-	}
-
-	// check whether the topic exist
-	topicCacheData, err = self.msgServer.topicCache.Get(topicName)
-	if topicCacheData == nil {
-		log.Warningf("TOPIC %s not exist", topicName)
-		err = common.TOPIC_NOT_EXIST
-		goto ErrOut
-	}
-
-	if topicCacheData.MemberExist(clientID) {
-		log.Warningf("ClientID %s exists in topic %s", clientID, topicName)
-		err = common.MEMBER_EXIST
-		goto ErrOut
-	}
-
-	sessionCacheData, err = self.msgServer.sessionCache.Get(clientID)
-	if sessionCacheData == nil {
-		log.Warningf("Client %s not online", clientID)
-		err = common.NOT_ONLINE
-		goto ErrOut
-	}
-	// Watch can only be added in ONE topic
-	if clientType == protocol.DEV_TYPE_WATCH && len(sessionCacheData.TopicList) != 1 {
-		log.Warningf("Watch %s is in topic %s", clientID, sessionCacheData.TopicList[0])
-		err = common.DENY_ACCESS
-		goto ErrOut
-
-	}
-
-	// session cache and store
-	sessionCacheData.AddTopic(topicName)
-	err = self.msgServer.sessionCache.Set(sessionCacheData)
-	if err != nil {
-		log.Error(err.Error())
-		goto ErrOut
-	}
-	err = self.msgServer.mongoStore.Set(sessionCacheData.SessionStoreData)
-	if err != nil {
-		log.Error(err.Error())
-		goto ErrOut
-	}
-
-	// topic cache and store
-	member = mongo_store.NewMember(clientID, clientName, clientType)
-	topicCacheData.AddMember(member)
-	err = self.msgServer.topicCache.Set(topicCacheData)
-	if err != nil {
-		log.Error(err.Error())
-		goto ErrOut
-	}
-	err = self.msgServer.mongoStore.Set(topicCacheData.TopicStoreData)
-	if err != nil {
-		log.Error(err.Error())
-		goto ErrOut
-	}
-
-ErrOut:
-	if err != nil {
-		resp.AddArg(err.Error())
-	} else {
-		resp.AddArg(protocol.RSP_SUCCESS)
-	}
-	err = session.Send(libnet.Json(resp))
-	if err != nil {
-		log.Error(err.Error())
-	}
-
-	return err
-}
-
-/*
    device/client -> MsgServer
        REQ_GET_TOPIC_LIST_CMD
 
@@ -1124,27 +1077,29 @@ ErrOut:
 func (self *ProtoProc) procGetTopicMember(cmd protocol.Cmd, session *libnet.Session) error {
 	log.Info("procGetTopicMember")
 	var err error
+	var topicCacheData *redis_store.TopicCacheData
 
 	resp := protocol.NewCmdSimple(protocol.RSP_GET_TOPIC_MEMBER_CMD)
+	if len(cmd.GetArgs()) != 1 {
+		err = common.SYNTAX_ERROR
+	} else {
+		topicName := cmd.GetArgs()[0]
 
-	topicName := cmd.GetArgs()[0]
+		clientID := session.State.(*base.SessionState).ClientID
+		//clientType := session.State.(*base.SessionState).ClientType
 
-	clientID := session.State.(*base.SessionState).ClientID
-	//clientType := session.State.(*base.SessionState).ClientType
+		// check whether the topic exist
+		topicCacheData, err = self.msgServer.topicCache.Get(topicName)
+		if topicCacheData == nil {
+			log.Warningf("TOPIC %s not exist", topicName)
+			err = common.TOPIC_NOT_EXIST
+		} else if topicCacheData.MemberExist(clientID) == false {
+			log.Warningf("%s not the member of topic %d", clientID, topicName)
+			err = common.DENY_ACCESS
+		}
 
-	// check whether the topic exist
-	topicCacheData, err := self.msgServer.topicCache.Get(topicName)
-	if topicCacheData == nil {
-		log.Warningf("TOPIC %s not exist", topicName)
-		err = common.TOPIC_NOT_EXIST
-		goto ErrOut
 	}
-	if topicCacheData.MemberExist(clientID) == false {
-		log.Warningf("%s not the member of topic %d", clientID, topicName)
-		err = common.DENY_ACCESS
-		goto ErrOut
-	}
-ErrOut:
+
 	if err != nil {
 		resp.AddArg(err.Error())
 	} else {
@@ -1167,15 +1122,16 @@ ErrOut:
 func (self *ProtoProc) procP2pAck(cmd protocol.Cmd, session *libnet.Session) error {
 	log.Info("procP2pAck")
 	var err error
-	clientID := cmd.GetArgs()[0]
-	uuid := cmd.GetArgs()[1]
-	status := cmd.GetArgs()[2]
-	self.msgServer.p2pAckMutex.Lock()
-	defer self.msgServer.p2pAckMutex.Unlock()
 
-	//self.msgServer.p2pAckStatus[clientID][uuid] = true
+	if len(cmd.GetArgs()) != 3 {
+		log.Error("procP2pAck: syntax error")
+		return common.SYNTAX_ERROR
+	}
+	uuid := cmd.GetArgs()[0]
+	status := cmd.GetArgs()[1]
+	fromeID := cmd.GetArgs()[2]
 
-	err = self.procP2PAckStatus(clientID, uuid, status)
+	err = self.procP2PAckStatus(fromeID, uuid, status)
 
 	return err
 }

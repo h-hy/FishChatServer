@@ -18,8 +18,9 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/oikomi/FishChatServer/log"
+
 	"github.com/oikomi/FishChatServer/libnet"
+	"github.com/oikomi/FishChatServer/log"
 )
 
 /*
@@ -42,7 +43,7 @@ func BuildTime() string {
 }
 
 func init() {
-	flag.Set("alsologtostderr", "true")
+	flag.Set("alsologtostderr", "false")
 	flag.Set("log_dir", "false")
 }
 
@@ -70,11 +71,11 @@ func main() {
 		log.Error(err.Error())
 	}
 	log.Info("server start:", server.Listener().Addr().String())
-	
+
 	sm := NewManager(cfg)
 	go sm.subscribeChannels()
-	
+
 	server.Serve(func(session *libnet.Session) {
-	
+
 	})
 }

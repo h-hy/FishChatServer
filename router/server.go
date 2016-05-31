@@ -69,13 +69,19 @@ func (self *Router) handleMsgServerClient(msc *libnet.Session) {
 		}
 		switch c.GetCmdName() {
 		case protocol.REQ_SEND_P2P_MSG_CMD:
-			err := pp.procSendMsgP2P(c, msc)
+			err := pp.procSendMsgP2P(&c, msc)
 			if err != nil {
 				log.Warning(err.Error())
 			}
 
-		case protocol.ROUTE_SEND_TOPIC_MSG_CMD:
-			err := pp.procSendMsgTopic(c, msc)
+		case protocol.IND_ACK_P2P_STATUS_CMD:
+			err := pp.procAckP2pStatus(&c, msc)
+			if err != nil {
+				log.Warning(err.Error())
+			}
+
+		case protocol.REQ_SEND_TOPIC_MSG_CMD:
+			err := pp.procSendMsgTopic(&c, msc)
 			if err != nil {
 				log.Warning(err.Error())
 			}

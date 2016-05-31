@@ -58,7 +58,7 @@ func (self *ProtoProc) procSendMsgP2P(cmd protocol.Cmd, session *libnet.Session)
 	self.Router.readMutex.Lock()
 	defer self.Router.readMutex.Unlock()
 	cacheSession, err := self.Router.sessionCache.Get(send2ID)
-	if err != nil {
+	if cacheSession == nil || cacheSession.Alive == false {
 		storeSession, err := self.Router.mongoStore.GetSessionFromCid(send2ID)
 		if err != nil {
 			log.Warningf("ID %s not registered, msg dropped", send2ID)
@@ -79,7 +79,47 @@ func (self *ProtoProc) procSendMsgP2P(cmd protocol.Cmd, session *libnet.Session)
 		log.Info(cacheSession.MsgServerAddr)
 
 		cmd.ChangeCmdName(protocol.ROUTE_SEND_P2P_MSG_CMD)
+		log.Info(cmd)
+		err = self.Router.msgServerClientMap[cacheSession.MsgServerAddr].Send(libnet.Json(cmd))
+		if err != nil {
+			log.Error("error:", err)
+			return err
+		}
+	}
 
+	return nil
+}
+
+func (self *ProtoProc) procAckP2pStatus(cmd protocol.Cmd, session *libnet.Session) error {
+	log.Info("procAckP2pStatus")
+	var err error
+
+	send2ID := cmd.GetArgs()[2]
+
+	self.Router.readMutex.Lock()
+	defer self.Router.readMutex.Unlock()
+	cacheSession, err := self.Router.sessionCache.Get(send2ID)
+	if cacheSession == nil || cacheSession.Alive == false {
+		storeSession, err := self.Router.mongoStore.GetSessionFromCid(send2ID)
+		if err != nil {
+			log.Warningf("ID %s not registered, msg dropped", send2ID)
+			return err
+		}
+		log.Info(storeSession)
+		log.Warningf("ID registered but offline: %s", send2ID)
+
+		cmd.ChangeCmdName(protocol.ROUTE_ACK_P2P_STATUS_CMD)
+		ms := session.Conn().RemoteAddr().String()
+		err = self.Router.msgServerClientMap[ms].Send(libnet.Json(cmd))
+		if err != nil {
+			log.Error("error:", err)
+			return err
+		}
+	} else {
+		log.Info(cacheSession.MsgServerAddr)
+
+		cmd.ChangeCmdName(protocol.ROUTE_ACK_P2P_STATUS_CMD)
+		log.Info(cmd)
 		err = self.Router.msgServerClientMap[cacheSession.MsgServerAddr].Send(libnet.Json(cmd))
 		if err != nil {
 			log.Error("error:", err)
@@ -116,6 +156,8 @@ func (self *ProtoProc) procSendMsgTopic(cmd protocol.Cmd, session *libnet.Sessio
 	}
 
 	cmd.ChangeCmdName(protocol.ROUTE_SEND_TOPIC_MSG_CMD)
+	log.Info(protocol.ROUTE_SEND_TOPIC_MSG_CMD)
+	log.Info(cmd)
 
 	for ip, num := range topicCacheData.AliveMemberNumMap {
 		if num > 0 {

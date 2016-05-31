@@ -16,12 +16,13 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"time"
-	"flag"
-	"github.com/oikomi/FishChatServer/log"
+
 	"github.com/oikomi/FishChatServer/base"
 	"github.com/oikomi/FishChatServer/libnet"
+	"github.com/oikomi/FishChatServer/log"
 	"github.com/oikomi/FishChatServer/storage/redis_store"
 )
 
@@ -47,7 +48,7 @@ func BuildTime() string {
 const VERSION string = "0.10"
 
 func init() {
-	flag.Set("alsologtostderr", "true")
+	flag.Set("alsologtostderr", "false")
 	flag.Set("log_dir", "false")
 }
 
@@ -55,7 +56,7 @@ func version() {
 	fmt.Printf("msg_server version %s Copyright (c) 2014 Harold Miao (miaohong@miaohong.org)  \n", VERSION)
 }
 
-var InputConfFile = flag.String("conf_file", "msg_server.json", "input conf file name")   
+var InputConfFile = flag.String("conf_file", "msg_server.json", "input conf file name")
 
 func handleSession(ms *MsgServer, session *libnet.Session) {
 	session.Process(func(msg *libnet.InBuffer) error {
@@ -63,7 +64,7 @@ func handleSession(ms *MsgServer, session *libnet.Session) {
 		if err != nil {
 			log.Error(err.Error())
 		}
-		
+
 		return nil
 	})
 }
@@ -78,16 +79,16 @@ func main() {
 		log.Error(err.Error())
 		return
 	}
-	
-	rs := redis_store.NewRedisStore(&redis_store.RedisStoreOptions {
-			Network        : "tcp",
-			Address        : cfg.Redis.Addr + cfg.Redis.Port,
-			ConnectTimeout : time.Duration(cfg.Redis.ConnectTimeout)*time.Millisecond,
-			ReadTimeout    : time.Duration(cfg.Redis.ReadTimeout)*time.Millisecond,
-			WriteTimeout   : time.Duration(cfg.Redis.WriteTimeout)*time.Millisecond,
-			Database       : 1,
-			KeyPrefix      : base.COMM_PREFIX,
-		})
+
+	rs := redis_store.NewRedisStore(&redis_store.RedisStoreOptions{
+		Network:        "tcp",
+		Address:        cfg.Redis.Addr + cfg.Redis.Port,
+		ConnectTimeout: time.Duration(cfg.Redis.ConnectTimeout) * time.Millisecond,
+		ReadTimeout:    time.Duration(cfg.Redis.ReadTimeout) * time.Millisecond,
+		WriteTimeout:   time.Duration(cfg.Redis.WriteTimeout) * time.Millisecond,
+		Database:       1,
+		KeyPrefix:      base.COMM_PREFIX,
+	})
 
 	ms := NewMsgServer(cfg, rs)
 
@@ -96,7 +97,7 @@ func main() {
 		panic(err)
 	}
 	log.Info("msg_server running at  ", ms.server.Listener().Addr().String())
-	
+
 	ms.createChannels()
 
 	go ms.scanDeadSession()

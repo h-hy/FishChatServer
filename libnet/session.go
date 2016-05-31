@@ -6,6 +6,7 @@ import (
 	"net"
 	"sync/atomic"
 	"time"
+
 	"github.com/oikomi/FishChatServer/libnet/syncs"
 )
 

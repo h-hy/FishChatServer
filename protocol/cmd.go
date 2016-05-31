@@ -60,23 +60,27 @@ const (
 	/*
 	   device/client -> MsgServer
 	       REQ_LOGOUT_CMD
-	       arg0: ClientID        //用户ID
 
 	   MsgServer -> device/client
 	       RSP_LOGOUT_CMD
 	       arg0: SUCCESS/ERROR
 	*/
 
-	REQ_SEND_P2P_MSG_CMD   = "REQ_SEND_P2P_MSG"
-	RSP_SEND_P2P_MSG_CMD   = "RSP_SEND_P2P_MSG"
-	ROUTE_SEND_P2P_MSG_CMD = "ROUTE_SEND_P2P_MSG"
-	IND_ACK_P2P_MSG_CMD    = "IND_ACK_P2P_MSG"
-	ROUTE_ACK_P2P_MSG_CMD  = "ROUTE_ACK_P2P_MSG"
+	REQ_SEND_P2P_MSG_CMD     = "REQ_SEND_P2P_MSG"
+	RSP_SEND_P2P_MSG_CMD     = "RSP_SEND_P2P_MSG"
+	ROUTE_SEND_P2P_MSG_CMD   = "ROUTE_SEND_P2P_MSG"
+	IND_ACK_P2P_STATUS_CMD   = "IND_ACK_P2P_STATUS"
+	ROUTE_ACK_P2P_STATUS_CMD = "ROUTE_ACK_P2P_STATUS"
 	/*
-	   device/client -> MsgServer -> Router
+	   device/client -> MsgServer
 	       REQ_SEND_P2P_MSG_CMD
 	       arg0: Sent2ID       //接收方用户ID
 	       arg1: Msg           //消息内容
+
+	       IND_ACK_P2P_STATUS_CMD
+	       arg0: uuid // 发送方知道uuid对应的已发送的消息已送达
+	       arg1: SENT/READ // 发送方知道uuid对应的消息状态：已送达/已读
+	       arg2: fromID        //发送方用户ID
 
 	   返回给消息发送者的消息
 	   MsgServer -> device/client
@@ -84,7 +88,7 @@ const (
 	       arg0: SUCCESS/FAILED
 	       arg1: uuid // MsgServer分配的消息uuid，发送方根据此uuid确定该消息状态
 
-	       IND_ACK_P2P_MSG_CMD
+	       IND_ACK_P2P_STATUS_CMD
 	       arg0: uuid // 发送方知道uuid对应的已发送的消息已送达
 	       arg1: SENT/READ // 发送方知道uuid对应的消息状态：已送达/已读
 
@@ -96,6 +100,11 @@ const (
 	       arg2: FromID        //发送方用户ID
 	       arg3: uuid          //MsgServer分配的消息uuid
 
+	       IND_ACK_P2P_STATUS_CMD
+	       arg0: uuid // 发送方知道uuid对应的已发送的消息已送达
+	       arg1: SENT/READ // 发送方知道uuid对应的消息状态：已送达/已读
+	       arg2: fromID        //发送方用户ID
+
 	   Router -> MsgServer
 	       ROUTE_SEND_P2P_MSG_CMD
 	       arg0: Sent2ID       //接收方用户ID
@@ -103,12 +112,20 @@ const (
 	       arg2: FromID        //发送方用户ID
 	       arg3: uuid          //MsgServer分配的消息uuid
 
+	       ROUTE_ACK_P2P_STATUS_CMD
+	       arg0: uuid // 发送方知道uuid对应的已发送的消息已送达
+	       arg1: SENT/READ // 发送方知道uuid对应的消息状态：已送达/已读
+
 	   发送给消息接受者的消息
 	   MsgServer -> device/client
 	       REQ_SEND_P2P_MSG_CMD
 	       arg0: Msg           //消息内容
 	       arg1: FromID        //发送方用户ID
 	       arg2: uuid          //MsgServer分配的消息uuid，可选，如果提供了则须IND_ACK_P2P_MSG_CMD(ClientID, uuid)
+
+	       IND_ACK_P2P_STATUS_CMD
+	       arg0: uuid // 发送方知道uuid对应的已发送的消息已送达
+	       arg1: SENT/READ // 发送方知道uuid对应的消息状态：已送达/已读
 	*/
 
 	REQ_CREATE_TOPIC_CMD = "REQ_CREATE_TOPIC"
@@ -171,7 +188,6 @@ const (
 	   client -> MsgServer
 	       REQ_QUIT_TOPIC_CMD
 	       arg0: TopicName     //群组名
-	       arg1: ClientID          //用户ID
 
 	   MsgServer -> client
 	       RSP_QUIT_TOPIC_CMD
@@ -184,30 +200,29 @@ const (
 	/*
 	   device/client -> MsgServer -> Router
 	       REQ_SEND_TOPIC_MSG_CMD
-	       arg0: ClientID      //发送方用户ID
-	       arg1: ClientType    //发送方终端类型，是client还是device
-	       arg2: Msg           //消息内容
-	       arg3: TopicName     //群组名, device无须提供
+	       arg0: Msg           //消息内容
+	       arg1: TopicName     //群组名, device无须提供
 
+	   返回给消息发送者的消息
 	   MsgServer -> device/client
 	       RSP_SEND_TOPIC_MSG_CMD
-	       arg0: SUCCESS/ERROR
+	       arg0: SUCCESS/FAILED
 
 	   通过Router转发消息(对终端开发者不可见)
 	   Router -> MsgServer
 	       ROUTE_SEND_TOPIC_MSG_CMD
-	       arg0: ClientID      //发送方用户ID
-	       arg1: ClientType    //发送方终端类型，是client还是device
-	       arg2: Msg           //消息内容
-	       arg3: TopicName     //群组名, device无须提供
+	       arg0: Msg           //消息内容
+	       arg1: TopicName     //群组名
+	       arg2: ClientID      //发送方用户ID
+	       arg3: ClientType    //发送方终端类型，是client还是device
 
 	   发送给消息接受者的消息
 	   MsgServer -> device/client
 	       REQ_SEND_TOPIC_MSG_CMD
-	       arg0: ClientID      //发送方用户ID
-	       arg1: ClientType    //发送方终端类型，是client还是device
-	       arg2: Msg           //消息内容
-	       arg3: TopicName     //群组名, device无须提供
+	       arg0: Msg           //消息内容
+	       arg1: TopicName     //群组名
+	       arg2: ClientID      //发送方用户ID
+	       arg3: ClientType    //发送方终端类型，是client还是device
 	*/
 
 	REQ_GET_TOPIC_LIST_CMD = "REQ_GET_TOPIC_LIST"
@@ -354,7 +369,7 @@ func NewCmdInternal(cmdName string, args []string, anyData interface{}) *CmdInte
 	}
 }
 
-func (self CmdInternal) ParseCmd(msglist []string) {
+func (self *CmdInternal) ParseCmd(msglist []string) {
 	self.CmdName = msglist[1]
 	self.Args = msglist[2:]
 }
@@ -363,7 +378,7 @@ func (self CmdInternal) GetCmdName() string {
 	return self.CmdName
 }
 
-func (self CmdInternal) ChangeCmdName(newName string) {
+func (self *CmdInternal) ChangeCmdName(newName string) {
 	self.CmdName = newName
 }
 
@@ -371,11 +386,11 @@ func (self CmdInternal) GetArgs() []string {
 	return self.Args
 }
 
-func (self CmdInternal) AddArg(arg string) {
+func (self *CmdInternal) AddArg(arg string) {
 	self.Args = append(self.Args, arg)
 }
 
-func (self CmdInternal) SetAnyData(a interface{}) {
+func (self *CmdInternal) SetAnyData(a interface{}) {
 	self.AnyData = a
 }
 

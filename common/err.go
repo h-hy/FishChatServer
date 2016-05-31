@@ -22,7 +22,7 @@ import (
 var (
 	NOTFOUNT        = errors.New("NOTFOUNT")
 	NOTOPIC         = errors.New("NO TOPIC")
-	SYNTAX_ERROR    = errors.New("SYNTAX ERROT")
+	SYNTAX_ERROR    = errors.New("SYNTAX ERROR")
 	NOT_LOGIN       = errors.New("NOT LOGIN")
 	DENY_ACCESS     = errors.New("DENY ACCESS")
 	TOPIC_EXIST     = errors.New("TOPIC EXIST")

@@ -40,8 +40,8 @@ func heartBeat(cfg *ClientConfig, msgServerClient *libnet.Session) {
 	hb.Beat()
 }
 
-func DisplayCommandList() int {
-loopInput:
+func DisplayCommandList() {
+
 	fmt.Println("RDA Watch Client Command:")
 	fmt.Println("0. Get your topic list")
 	fmt.Println("1. Get member list of specific topic")
@@ -52,24 +52,21 @@ loopInput:
 	fmt.Println("6. Quit topic")
 	fmt.Println("7. Send p2p message")
 	fmt.Println("8. Send topic message")
-	fmt.Print("Please input number (0~8): ")
+	fmt.Println("h. Help. Show this command list")
+	fmt.Println("q. Quit.")
+	fmt.Print("Please input: ")
+}
 
+func GetInputCommand() (string, error) {
 	var input string
-	var num int
 	var err error
+
 	if _, err = fmt.Scanf("%s\n", &input); err != nil {
-		log.Error(err.Error())
+		fmt.Println(err.Error())
+		return "", err
 	}
 
-	if num, err = strconv.Atoi(input); err != nil {
-		fmt.Println("Input error")
-		goto loopInput
-	}
-	if num < 0 || num > 8 {
-		fmt.Println("Input error")
-		goto loopInput
-	}
-	return num
+	return input, nil
 }
 
 type Client struct {
@@ -94,7 +91,7 @@ func (self *Client) procLoginGateway(cfg *ClientConfig) error {
 	}
 
 	// input client id
-	fmt.Println("input my id :")
+	fmt.Print("input my id :")
 	var myID string
 	var myType string
 	var myPass string
@@ -106,7 +103,7 @@ func (self *Client) procLoginGateway(cfg *ClientConfig) error {
 
 	// input client type
 loopType:
-	fmt.Println("input my type, D for Device, C for Client :")
+	fmt.Print("input my type, D for Device, C for Client :")
 	if _, err = fmt.Scanf("%s\n", &myType); err != nil {
 		log.Error(err.Error())
 	}
@@ -122,7 +119,7 @@ loopType:
 	// input password
 	myPass = ""
 	if myType == protocol.DEV_TYPE_CLIENT {
-		fmt.Println("input my password :")
+		fmt.Print("input my password :")
 		if _, err = fmt.Scanf("%s\n", &myPass); err != nil {
 			log.Error(err.Error())
 		}
@@ -166,7 +163,6 @@ loopType:
 
 func (self *Client) procLoginServer() error {
 	var err error
-	var c protocol.Cmd
 
 	self.msClient, err = libnet.Dial("tcp", self.msAddr)
 	if err != nil {
@@ -184,6 +180,7 @@ func (self *Client) procLoginServer() error {
 		return err
 	}
 
+	var c protocol.CmdSimple
 	err = self.msClient.ProcessOnce(func(msg *libnet.InBuffer) error {
 		log.Info(string(msg.Data))
 		err = json.Unmarshal(msg.Data, &c)
@@ -202,6 +199,16 @@ func (self *Client) procLoginServer() error {
 
 	fmt.Println("login msg server SUCCESS")
 	return nil
+}
+
+func (self *Client) procLogout() error {
+	cmd := protocol.NewCmdSimple(protocol.REQ_LOGOUT_CMD)
+	err := self.msClient.Send(libnet.Json(cmd))
+	if err != nil {
+		log.Error(err.Error())
+	}
+
+	return err
 }
 
 func (self *Client) procGetTopicList() error {
@@ -242,9 +249,18 @@ func (self *Client) procGetTopicListRsp(c *protocol.CmdSimple) error {
 	return nil
 }
 func (self *Client) procGetTopicMember() error {
-	// get topic list
+	// get topic member list
+	var input string
+	var err error
+
+	fmt.Print("input topic name :")
+	if _, err = fmt.Scanf("%s\n", &input); err != nil {
+		log.Error(err.Error())
+	}
+
 	cmd := protocol.NewCmdSimple(protocol.REQ_GET_TOPIC_MEMBER_CMD)
-	err := self.msClient.Send(libnet.Json(cmd))
+	cmd.AddArg(input)
+	err = self.msClient.Send(libnet.Json(cmd))
 	if err != nil {
 		log.Error(err.Error())
 	}
@@ -282,19 +298,19 @@ func (self *Client) procGetTopicMemberRsp(c *protocol.CmdSimple) error {
 func (self *Client) procCreateTopic() error {
 	// CREATE TOPIC
 	var input string
-	fmt.Println("want to create a topic (y/n) :")
+	fmt.Print("want to create a topic (y/n) :")
 	if _, err := fmt.Scanf("%s\n", &input); err != nil {
 		log.Error(err.Error())
 	}
 	if input == "y" {
 		cmd := protocol.NewCmdSimple(protocol.REQ_CREATE_TOPIC_CMD)
-		fmt.Println("CREATE_TOPIC_CMD | input topic name :")
+		fmt.Print("CREATE_TOPIC_CMD | input topic name :")
 		if _, err := fmt.Scanf("%s\n", &input); err != nil {
 			log.Error(err.Error())
 		}
 		cmd.AddArg(input)
 
-		fmt.Println("CREATE_TOPIC_CMD | input alias name :")
+		fmt.Print("CREATE_TOPIC_CMD | input alias name :")
 		if _, err := fmt.Scanf("%s\n", &input); err != nil {
 			log.Error(err.Error())
 		}
@@ -318,7 +334,7 @@ func (self *Client) procCreateTopicRsp(c *protocol.CmdSimple) error {
 
 func (self *Client) procJoinTopic() error {
 	var input string
-	fmt.Println("want to join a topic (y/n) :")
+	fmt.Print("want to join a topic? (y/n) :")
 	if _, err := fmt.Scanf("%s\n", &input); err != nil {
 		log.Error(err.Error())
 		return err
@@ -326,14 +342,14 @@ func (self *Client) procJoinTopic() error {
 	if input == "y" {
 		cmd := protocol.NewCmdSimple(protocol.REQ_JOIN_TOPIC_CMD)
 
-		fmt.Println("input topic name :")
+		fmt.Print("input topic name :")
 		if _, err := fmt.Scanf("%s\n", &input); err != nil {
 			fmt.Errorf(err.Error())
 			return err
 		}
 		cmd.AddArg(input)
 
-		fmt.Println("input alias name :")
+		fmt.Print("input alias name :")
 		if _, err := fmt.Scanf("%s\n", &input); err != nil {
 			fmt.Errorf(err.Error())
 			return err
@@ -360,7 +376,7 @@ func (self *Client) procJoinTopicRsp(c *protocol.CmdSimple) error {
 
 func (self *Client) procQuitTopic() error {
 	var input string
-	fmt.Println("want to quit a topic (y/n) :")
+	fmt.Print("want to quit a topic? (y/n) :")
 	if _, err := fmt.Scanf("%s\n", &input); err != nil {
 		log.Error(err.Error())
 		return err
@@ -368,7 +384,7 @@ func (self *Client) procQuitTopic() error {
 	if input == "y" {
 		cmd := protocol.NewCmdSimple(protocol.REQ_QUIT_TOPIC_CMD)
 
-		fmt.Println("input topic name :")
+		fmt.Print("input topic name :")
 		if _, err := fmt.Scanf("%s\n", &input); err != nil {
 			fmt.Errorf(err.Error())
 			return err
@@ -395,7 +411,7 @@ func (self *Client) procQuitTopicRsp(c *protocol.CmdSimple) error {
 
 func (self *Client) procAdd2Topic() error {
 	var input string
-	fmt.Println("want to add members into a topic (y/n) :")
+	fmt.Print("want to add members into a topic? (y/n) :")
 	if _, err := fmt.Scanf("%s\n", &input); err != nil {
 		log.Error(err.Error())
 		return err
@@ -403,21 +419,21 @@ func (self *Client) procAdd2Topic() error {
 	if input == "y" {
 		cmd := protocol.NewCmdSimple(protocol.REQ_ADD_2_TOPIC_CMD)
 
-		fmt.Println("input topic name :")
+		fmt.Print("input topic name :")
 		if _, err := fmt.Scanf("%s\n", &input); err != nil {
 			fmt.Errorf(err.Error())
 			return err
 		}
 		cmd.AddArg(input)
 
-		fmt.Println("input member ID :")
+		fmt.Print("input member ID :")
 		if _, err := fmt.Scanf("%s\n", &input); err != nil {
 			fmt.Errorf(err.Error())
 			return err
 		}
 		cmd.AddArg(input)
 
-		fmt.Println("input member name :")
+		fmt.Print("input member name :")
 		if _, err := fmt.Scanf("%s\n", &input); err != nil {
 			fmt.Errorf(err.Error())
 			return err
@@ -444,7 +460,7 @@ func (self *Client) procAdd2TopicRsp(c *protocol.CmdSimple) error {
 
 func (self *Client) procKickTopic() error {
 	var input string
-	fmt.Println("want to kick member out of a topic (y/n) :")
+	fmt.Print("want to kick member out of a topic? (y/n) :")
 	if _, err := fmt.Scanf("%s\n", &input); err != nil {
 		log.Error(err.Error())
 		return err
@@ -452,14 +468,14 @@ func (self *Client) procKickTopic() error {
 	if input == "y" {
 		cmd := protocol.NewCmdSimple(protocol.REQ_KICK_TOPIC_CMD)
 
-		fmt.Println("input topic name :")
+		fmt.Print("input topic name :")
 		if _, err := fmt.Scanf("%s\n", &input); err != nil {
 			fmt.Errorf(err.Error())
 			return err
 		}
 		cmd.AddArg(input)
 
-		fmt.Println("input member ID :")
+		fmt.Print("input member ID :")
 		if _, err := fmt.Scanf("%s\n", &input); err != nil {
 			fmt.Errorf(err.Error())
 			return err
@@ -489,14 +505,14 @@ func (self *Client) procSendP2PMsg() error {
 
 	cmd := protocol.NewCmdSimple(protocol.REQ_SEND_P2P_MSG_CMD)
 
-	fmt.Println("send the id you want to talk :")
+	fmt.Print("send the id you want to talk :")
 	if _, err := fmt.Scanf("%s\n", &input); err != nil {
 		log.Error(err.Error())
 	}
 
 	cmd.AddArg(input)
 
-	fmt.Println("input msg :")
+	fmt.Print("input msg :")
 	if _, err := fmt.Scanf("%s\n", &input); err != nil {
 		log.Error(err.Error())
 	}
@@ -518,12 +534,14 @@ func (self *Client) procSendP2PMsgRsp(c *protocol.CmdSimple) error {
 	return nil
 }
 
+// [msg, fromID, uuid]
 func (self *Client) procSendP2PMsgReq(c *protocol.CmdSimple) error {
 	fmt.Println(c.GetArgs()[1] + "  says : " + c.GetArgs()[0])
 	if len(c.GetArgs()) >= 3 {
-		cmd := protocol.NewCmdSimple(protocol.IND_ACK_P2P_MSG_CMD)
+		cmd := protocol.NewCmdSimple(protocol.IND_ACK_P2P_STATUS_CMD)
 		cmd.AddArg(c.GetArgs()[2])
 		cmd.AddArg(protocol.P2P_ACK_READ)
+		cmd.AddArg(c.GetArgs()[1])
 
 		err := self.msClient.Send(libnet.Json(cmd))
 		if err != nil {
@@ -538,17 +556,19 @@ func (self *Client) procSendTopicMsg() error {
 
 	cmd := protocol.NewCmdSimple(protocol.REQ_SEND_TOPIC_MSG_CMD)
 
-	fmt.Println("input msg :")
+	fmt.Print("input msg :")
 	if _, err := fmt.Scanf("%s\n", &input); err != nil {
 		log.Error(err.Error())
 	}
 	cmd.AddArg(input)
 
-	fmt.Println("input the topic you want to talk :")
-	if _, err := fmt.Scanf("%s\n", &input); err != nil {
-		log.Error(err.Error())
+	if self.clientType == protocol.DEV_TYPE_CLIENT {
+		fmt.Print("input the topic you want to talk :")
+		if _, err := fmt.Scanf("%s\n", &input); err != nil {
+			log.Error(err.Error())
+		}
+		cmd.AddArg(input)
 	}
-	cmd.AddArg(input)
 
 	err := self.msClient.Send(libnet.Json(cmd))
 	if err != nil {
@@ -631,7 +651,7 @@ func main() {
 		case protocol.RSP_SEND_P2P_MSG_CMD:
 			client.procSendP2PMsgRsp(&c)
 
-		case protocol.IND_ACK_P2P_MSG_CMD:
+		case protocol.IND_ACK_P2P_STATUS_CMD:
 			fmt.Println("msg sent [uuid=" + c.GetArgs()[0] + "] status: " + c.GetArgs()[1])
 
 		case protocol.REQ_SEND_P2P_MSG_CMD:
@@ -645,7 +665,11 @@ func main() {
 	})
 
 	for {
-		num := DisplayCommandList()
+		input, err := GetInputCommand()
+		if err != nil {
+			DisplayCommandList()
+			continue
+		}
 		/*
 			fmt.Println("0. Get your topic list")
 			fmt.Println("1. Get member list of specific topic")
@@ -657,34 +681,42 @@ func main() {
 			fmt.Println("7. Send p2p message")
 			fmt.Println("8. Send topic message")
 		*/
-		switch num {
-		case 0:
+		switch input {
+		case "0":
 			client.procGetTopicList()
-		case 1:
+		case "1":
 			client.procGetTopicMember()
-		case 2:
+		case "2":
 			client.procCreateTopic()
-		case 3:
+		case "3":
 			client.procAdd2Topic()
-		case 4:
+		case "4":
 			client.procKickTopic()
-		case 5:
+		case "5":
 			client.procJoinTopic()
-		case 6:
+		case "6":
 			client.procQuitTopic()
-		case 7:
+		case "7":
 			client.procSendP2PMsg()
-		case 8:
+		case "8":
 			client.procSendTopicMsg()
+		case "h", "H", "help", "Help":
+			DisplayCommandList()
+		case "q", "Q", "quit", "Quit":
+			fmt.Println("client quit...")
+			client.procLogout()
+
+			client.msClient.Close()
+
+			// msgServerClient.Process(func(msg *libnet.InBuffer) error {
+			// 	log.Info(string(msg.Data))
+			// 	return nil
+			// })
+
+			log.Flush()
+
+			return
 		}
 	}
 
-	defer client.msClient.Close()
-
-	// msgServerClient.Process(func(msg *libnet.InBuffer) error {
-	// 	log.Info(string(msg.Data))
-	// 	return nil
-	// })
-
-	log.Flush()
 }

@@ -52,7 +52,7 @@ func version() {
 }
 
 func init() {
-	flag.Set("alsologtostderr", "true")
+	flag.Set("alsologtostderr", "false")
 	flag.Set("log_dir", "false")
 }
 

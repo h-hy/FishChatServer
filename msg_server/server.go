@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/oikomi/FishChatServer/base"
+	"github.com/oikomi/FishChatServer/common"
 	"github.com/oikomi/FishChatServer/libnet"
 	"github.com/oikomi/FishChatServer/log"
 	"github.com/oikomi/FishChatServer/protocol"
@@ -43,10 +44,10 @@ type MsgServer struct {
 	sessionCache     *redis_store.SessionCache
 	topicCache       *redis_store.TopicCache
 	offlineMsgCache  *redis_store.OfflineMsgCache
+	p2pStatusCache   *redis_store.P2pStatusCache
 	mongoStore       *mongo_store.MongoStore
-	p2pAckStatus     base.AckMap // p2pAckStatus[sendID] notes the status of all the messages sent
 	scanSessionMutex sync.Mutex
-	p2pAckMutex      sync.Mutex
+	readMutex        sync.Mutex // multi client session may ask for REDIS at the same time
 }
 
 func NewMsgServer(cfg *MsgServerConfig, rs *redis_store.RedisStore) *MsgServer {
@@ -59,8 +60,8 @@ func NewMsgServer(cfg *MsgServerConfig, rs *redis_store.RedisStore) *MsgServer {
 		sessionCache:    redis_store.NewSessionCache(rs),
 		topicCache:      redis_store.NewTopicCache(rs),
 		offlineMsgCache: redis_store.NewOfflineMsgCache(rs),
+		p2pStatusCache:  redis_store.NewP2pStatusCache(rs),
 		mongoStore:      mongo_store.NewMongoStore(cfg.Mongo.Addr, cfg.Mongo.Port, cfg.Mongo.User, cfg.Mongo.Password),
-		p2pAckStatus:    make(base.AckMap),
 	}
 }
 
@@ -133,6 +134,8 @@ func (self *MsgServer) procOnline(ID string) {
 		log.Errorf("ID(%s) no session cache", ID)
 		return
 	}
+	sessionCacheData.Alive = true
+	self.sessionCache.Set(sessionCacheData)
 	for _, topicName := range sessionCacheData.TopicList {
 		topicCacheData, err := self.topicCache.Get(topicName)
 		if err != nil {
@@ -168,6 +171,8 @@ func (self *MsgServer) procOffline(ID string) {
 			log.Errorf("ID(%s) no session cache", ID)
 			return
 		}
+		sessionCacheData.Alive = false
+		self.sessionCache.Set(sessionCacheData)
 		for _, topicName := range sessionCacheData.TopicList {
 			topicCacheData, _ := self.topicCache.Get(topicName)
 			if topicCacheData != nil {
@@ -184,6 +189,122 @@ func (self *MsgServer) procOffline(ID string) {
 		}
 	}
 }
+func (self *MsgServer) procJoinTopic(member *mongo_store.Member, topicName string) error {
+	log.Info("procJoinTopic")
+	var err error
+
+	// check whether the topic exist
+	topicCacheData, err := self.topicCache.Get(topicName)
+	if topicCacheData == nil {
+		log.Warningf("TOPIC %s not exist", topicName)
+		return common.TOPIC_NOT_EXIST
+	}
+
+	if topicCacheData.MemberExist(member.ID) {
+		log.Warningf("ClientID %s exists in topic %s", member.ID, topicName)
+		return common.MEMBER_EXIST
+	}
+
+	sessionCacheData, err := self.sessionCache.Get(member.ID)
+	if sessionCacheData == nil {
+		log.Warningf("Client %s not online", member.ID)
+		return common.NOT_ONLINE
+	}
+	// Watch can only be added in ONE topic
+	//fmt.Println("len of topic list of %s: %d", member.ID, len(sessionCacheData.TopicList))
+	if member.Type == protocol.DEV_TYPE_WATCH && len(sessionCacheData.TopicList) >= 1 {
+		log.Warningf("Watch %s is in topic %s", member.ID, sessionCacheData.TopicList[0])
+		return common.DENY_ACCESS
+	}
+
+	// session cache and store
+	sessionCacheData.AddTopic(topicName)
+	err = self.sessionCache.Set(sessionCacheData)
+	if err != nil {
+		log.Error(err.Error())
+		return err
+	}
+	err = self.mongoStore.Set(sessionCacheData.SessionStoreData)
+	if err != nil {
+		log.Error(err.Error())
+		return err
+	}
+
+	// topic cache and store
+	topicCacheData.AddMember(member)
+	err = self.topicCache.Set(topicCacheData)
+	if err != nil {
+		log.Error(err.Error())
+		return err
+	}
+	err = self.mongoStore.Set(topicCacheData.TopicStoreData)
+	if err != nil {
+		log.Error(err.Error())
+		return err
+	}
+	return nil
+}
+func (self *MsgServer) procQuitTopic(clientID string, topicName string) error {
+	log.Info("procQuitTopic")
+	var err error
+	var topicCacheData *redis_store.TopicCacheData
+	var sessionCacheData *redis_store.SessionCacheData
+	var sessionStoreData *mongo_store.SessionStoreData
+
+	// check whether the topic exist
+	topicCacheData, err = self.topicCache.Get(topicName)
+	if topicCacheData == nil {
+		log.Warningf("TOPIC %s not exist", topicName)
+		return common.TOPIC_NOT_EXIST
+	}
+
+	if !topicCacheData.MemberExist(clientID) {
+		log.Warningf("member %s is not in topic %s", clientID, topicName)
+		return common.NOT_MEMBER
+	}
+	// update topic cache and store
+	topicCacheData.RemoveMember(clientID)
+	err = self.topicCache.Set(topicCacheData)
+	if err != nil {
+		log.Error(err.Error())
+		return err
+	}
+	log.Infof("member %s removed from topic CACHE %s", clientID, topicName)
+	err = self.mongoStore.Set(topicCacheData.TopicStoreData)
+	if err != nil {
+		log.Error(err.Error())
+		return err
+	}
+	log.Infof("member %s removed from topic STORE %s", clientID, topicName)
+
+	// update session cache and store
+	sessionStoreData, err = self.mongoStore.GetSessionFromCid(clientID)
+	if sessionStoreData == nil {
+		log.Warningf("ID %s not registered in STORE", clientID)
+	} else {
+		log.Infof("remove topic %s from Client STORE %s", topicName, clientID)
+		sessionStoreData.RemoveTopic(topicName)
+		err = self.mongoStore.Set(sessionStoreData)
+		if err != nil {
+			log.Error(err.Error())
+			return err
+		}
+		log.Infof("topic %s removed from Client STORE %s", topicName, clientID)
+
+		sessionCacheData, err = self.sessionCache.Get(clientID)
+		if sessionCacheData != nil {
+			log.Infof("remove topic %s from Client CACHE %s", topicName, clientID)
+			sessionCacheData.RemoveTopic(topicName)
+			err = self.sessionCache.Set(sessionCacheData)
+			if err != nil {
+				log.Error(err.Error())
+				return err
+			}
+			log.Infof("topic %s removed from Client CACHE %s", topicName, clientID)
+		}
+	}
+	return nil
+}
 
 func (self *MsgServer) parseProtocol(cmd []byte, session *libnet.Session) error {
 	var c protocol.CmdSimple
@@ -195,6 +316,11 @@ func (self *MsgServer) parseProtocol(cmd []byte, session *libnet.Session) error 
 
 	pp := NewProtoProc(self)
 
+	self.readMutex.Lock()
+	defer self.readMutex.Unlock()
+
+	log.Infof("[%s]->[%s]", session.Conn().RemoteAddr().String(), self.cfg.LocalIP)
+	log.Info(c)
 	switch c.GetCmdName() {
 	case protocol.SEND_PING_CMD:
 		err = pp.procPing(&c, session)
@@ -233,14 +359,14 @@ func (self *MsgServer) parseProtocol(cmd []byte, session *libnet.Session) error 
 		}
 
 	// p2p ack
-	case protocol.IND_ACK_P2P_MSG_CMD:
+	case protocol.IND_ACK_P2P_STATUS_CMD:
 		err = pp.procP2pAck(&c, session)
 		if err != nil {
 			log.Error("error:", err)
 			return err
 		}
 	// p2p ack
-	case protocol.ROUTE_ACK_P2P_MSG_CMD:
+	case protocol.ROUTE_ACK_P2P_STATUS_CMD:
 		err = pp.procP2pAck(&c, session)
 		if err != nil {
 			log.Error("error:", err)
@@ -283,6 +409,13 @@ func (self *MsgServer) parseProtocol(cmd []byte, session *libnet.Session) error 
 
 	case protocol.REQ_JOIN_TOPIC_CMD:
 		err = pp.procJoinTopic(&c, session)
+		if err != nil {
+			log.Error("error:", err)
+			return err
+		}
+
+	case protocol.REQ_QUIT_TOPIC_CMD:
+		err = pp.procQuitTopic(&c, session)
 		if err != nil {
 			log.Error("error:", err)
 			return err

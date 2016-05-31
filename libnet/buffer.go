@@ -90,11 +90,11 @@ type bufferPool struct {
 	size int64
 
 	// InBuffer
-	in     unsafe.Pointer
 	inGet  uint64
 	inNew  uint64
 	inFree uint64
 	inDrop uint64
+	in     unsafe.Pointer
 
 	// OutBuffer
 	out     unsafe.Pointer

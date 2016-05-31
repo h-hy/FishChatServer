@@ -18,11 +18,12 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/oikomi/FishChatServer/log"
-	"github.com/oikomi/FishChatServer/libnet"
-	_ "github.com/oikomi/FishChatServer/monitor/routers"
-	"github.com/oikomi/FishChatServer/monitor/controllers"
+
 	"github.com/astaxie/beego"
+	"github.com/oikomi/FishChatServer/libnet"
+	"github.com/oikomi/FishChatServer/log"
+	"github.com/oikomi/FishChatServer/monitor/controllers"
+	_ "github.com/oikomi/FishChatServer/monitor/routers"
 )
 
 /*
@@ -47,7 +48,7 @@ func BuildTime() string {
 const VERSION string = "0.10"
 
 func init() {
-	flag.Set("alsologtostderr", "true")
+	flag.Set("alsologtostderr", "false")
 	flag.Set("log_dir", "false")
 }
 
@@ -55,7 +56,7 @@ func version() {
 	fmt.Printf("monitor version %s Copyright (c) 2014-2015 Harold Miao (miaohong@miaohong.org)  \n", VERSION)
 }
 
-var InputConfFile = flag.String("conf_file", "monitor.json", "input conf file name")   
+var InputConfFile = flag.String("conf_file", "monitor.json", "input conf file name")
 
 func main() {
 	version()
@@ -67,21 +68,21 @@ func main() {
 		log.Error(err.Error())
 		return
 	}
-	
+
 	server, err := libnet.Listen(cfg.TransportProtocols, cfg.Listen)
 	if err != nil {
 		log.Error(err.Error())
 		return
 	}
 	log.Info("server start: ", server.Listener().Addr().String())
-	
+
 	m := NewMonitor(cfg)
 	//TODO not use go
 	m.subscribeChannels()
 	go server.Serve(func(session *libnet.Session) {
-	
+
 	})
-	
+
 	beego.Router("api/v1/monitor", &controllers.MonitorController{})
 	//beego.SetStaticPath("/views", "/mh/mygo/src/github.com/oikomi/FishChatServer/monitor/views")
 	beego.SetStaticPath("/views", "views")

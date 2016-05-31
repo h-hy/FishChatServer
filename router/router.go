@@ -48,7 +48,7 @@ func BuildTime() string {
 const VERSION string = "0.10"
 
 func init() {
-	flag.Set("alsologtostderr", "true")
+	flag.Set("alsologtostderr", "false")
 	flag.Set("log_dir", "false")
 }
 

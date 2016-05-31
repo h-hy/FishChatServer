@@ -101,7 +101,7 @@ func (self *Gateway) connectMsgServer(ms string) (*libnet.Session, error) {
 }
 
 func (self *Gateway) subscribeChannels() error {
-	log.Info("monitor start to subscribeChannels")
+	log.Info("gateway start to subscribeChannels")
 	for _, ms := range self.cfg.MsgServerList {
 		msgServerClient, err := self.connectMsgServer(ms)
 		if err != nil {
