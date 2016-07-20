@@ -60,11 +60,13 @@ func (self *ProtoProc) procSubscribeChannel(cmd protocol.Cmd, session *libnet.Se
 
 func (self *ProtoProc) procPing(cmd protocol.Cmd, session *libnet.Session) error {
 	//log.Info("procPing")
-	cid := session.State.(*base.SessionState).ClientID
-	self.msgServer.scanSessionMutex.Lock()
-	defer self.msgServer.scanSessionMutex.Unlock()
-	self.msgServer.sessions[cid].State.(*base.SessionState).Alive = true
-
+	//cid := session.State.(*base.SessionState).ClientID
+	if session.State != nil {
+		self.msgServer.scanSessionMutex.Lock()
+		defer self.msgServer.scanSessionMutex.Unlock()
+		//self.msgServer.sessions[cid].State.(*base.SessionState).Alive = true
+		session.State.(*base.SessionState).Alive = true
+	}
 	return nil
 }
 
@@ -100,7 +102,7 @@ func (self *ProtoProc) procOfflineMsg(session *libnet.Session, ID string) error 
 					}
 				}
 			} else {
-				resp := protocol.NewCmdSimple(protocol.REQ_SEND_P2P_MSG_CMD)
+				resp := protocol.NewCmdSimple(protocol.IND_SEND_P2P_MSG_CMD)
 				resp.AddArg(v.Msg)
 				resp.AddArg(v.FromID)
 				resp.AddArg(v.Uuid)
@@ -429,7 +431,7 @@ func (self *ProtoProc) procSendMessageP2P(cmd protocol.Cmd, session *libnet.Sess
 		}
 	} else if sessionCacheData.MsgServerAddr == self.msgServer.cfg.LocalIP {
 		log.Info("procSendMessageP2P: in the same server")
-		req := protocol.NewCmdSimple(protocol.REQ_SEND_P2P_MSG_CMD)
+		req := protocol.NewCmdSimple(protocol.IND_SEND_P2P_MSG_CMD)
 		req.AddArg(send2Msg)
 		req.AddArg(fromID)
 		// add uuid
@@ -497,7 +499,7 @@ func (self *ProtoProc) procRouteMessageP2P(cmd protocol.Cmd, session *libnet.Ses
 	uuid := cmd.GetArgs()[3]
 
 	if self.msgServer.sessions[send2ID] != nil {
-		resp := protocol.NewCmdSimple(protocol.REQ_SEND_P2P_MSG_CMD)
+		resp := protocol.NewCmdSimple(protocol.IND_SEND_P2P_MSG_CMD)
 		resp.AddArg(send2Msg)
 		resp.AddArg(fromID)
 		// add uuid
@@ -927,11 +929,12 @@ func (self *ProtoProc) procSendTopicMsg(cmd protocol.Cmd, session *libnet.Sessio
 		topic_msg_resp.AddArg(ClientID)
 		topic_msg_resp.AddArg(ClientType)
 
-		if topicCacheData.AliveMemberNumMap[self.msgServer.cfg.LocalIP] > 0 {
+		if topicCacheData.AliveMemberNumMap[self.msgServer.cfg.LocalIP] > 1 {
 			// exactly in this server, just broadcasting
+			topic_msg_resp.ChangeCmdName(protocol.IND_SEND_TOPIC_MSG_CMD)
 			log.Warningf("topic %s has %d member(s) in this server", topicName, topicCacheData.AliveMemberNumMap[self.msgServer.cfg.LocalIP])
 			for _, mID := range topicCacheData.MemberList {
-				if self.msgServer.sessions[mID.ID] != nil {
+				if mID.ID != ClientID && self.msgServer.sessions[mID.ID] != nil {
 					self.msgServer.sessions[mID.ID].Send(libnet.Json(topic_msg_resp))
 					if err != nil {
 						log.Fatalln(err.Error())
@@ -941,6 +944,7 @@ func (self *ProtoProc) procSendTopicMsg(cmd protocol.Cmd, session *libnet.Sessio
 		}
 		if self.msgServer.channels[protocol.SYSCTRL_SEND] != nil {
 			//topic_msg_resp.ChangeCmdName(protocol.ROUTE_SEND_TOPIC_MSG_CMD)
+			topic_msg_resp.ChangeCmdName(protocol.REQ_SEND_TOPIC_MSG_CMD)
 			for ip, num := range topicCacheData.AliveMemberNumMap {
 				if num > 0 {
 					log.Warningf("topic %s has %d member(s) in ip %s", topicName, num, ip)
@@ -996,7 +1000,7 @@ func (self *ProtoProc) procRouteTopicMsg(cmd protocol.Cmd, session *libnet.Sessi
 		return common.TOPIC_NOT_EXIST
 	}
 
-	cmd.ChangeCmdName(protocol.REQ_SEND_TOPIC_MSG_CMD)
+	cmd.ChangeCmdName(protocol.IND_SEND_TOPIC_MSG_CMD)
 
 	// exactly in this server, just broadcasting
 	log.Warningf("topic %s has %d member(s) in this server", topicName, topicCacheData.AliveMemberNumMap[self.msgServer.cfg.LocalIP])

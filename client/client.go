@@ -16,11 +16,14 @@
 package main
 
 import (
+	"bufio"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
+	"os"
 	"strconv"
+	"strings"
 
 	"github.com/oikomi/FishChatServer/common"
 	"github.com/oikomi/FishChatServer/libnet"
@@ -40,94 +43,52 @@ func heartBeat(cfg *ClientConfig, msgServerClient *libnet.Session) {
 	hb.Beat()
 }
 
-func DisplayCommandList() {
-
-	fmt.Println("RDA Watch Client Command:")
-	fmt.Println("0. Get your topic list")
-	fmt.Println("1. Get member list of specific topic")
-	fmt.Println("2. Create topic")
-	fmt.Println("3. Add someone into the topic, only for topic creator")
-	fmt.Println("4. Kick someone out of the topic, only for topic creator")
-	fmt.Println("5. Join topic")
-	fmt.Println("6. Quit topic")
-	fmt.Println("7. Send p2p message")
-	fmt.Println("8. Send topic message")
-	fmt.Println("h. Help. Show this command list")
-	fmt.Println("q. Quit.")
-	fmt.Print("Please input: ")
-}
-
-func GetInputCommand() (string, error) {
-	var input string
-	var err error
-
-	if _, err = fmt.Scanf("%s\n", &input); err != nil {
-		fmt.Println(err.Error())
-		return "", err
-	}
-
-	return input, nil
-}
+var bExit bool = false
 
 type Client struct {
+	cfg        *ClientConfig
+	bLogin     bool
 	clientID   string
 	clientType string
+	clientPwd  string
 	uuid       string
 	msAddr     string
-	msClient   *libnet.Session
+	session    *libnet.Session
 }
 
 func NewClient() *Client {
-	return new(Client)
+	cfg, err := LoadConfig(*InputConfFile)
+	if err != nil {
+		log.Error(err.Error())
+		return nil
+	}
+	return &Client{
+		cfg:    cfg,
+		bLogin: false,
+	}
 }
 
+type HelpInfo struct {
+	desc   string
+	detail string
+	f      func(client *Client, args []string) error
+}
+
+var help_string map[string]HelpInfo
+
 // return (ClientID, MsgServerAddr)
-func (self *Client) procLoginGateway(cfg *ClientConfig) error {
+func login_gateway(self *Client) error {
 	fmt.Println("req GatewayServer...")
 
-	gatewayClient, err := libnet.Dial("tcp", cfg.GatewayServer)
+	gatewayClient, err := libnet.Dial("tcp", self.cfg.GatewayServer)
 	if err != nil {
 		panic(err)
 	}
 
-	// input client id
-	fmt.Print("input my id :")
-	var myID string
-	var myType string
-	var myPass string
-
-	if _, err := fmt.Scanf("%s\n", &myID); err != nil {
-		log.Error(err.Error())
-	}
-	self.clientID = myID
-
-	// input client type
-loopType:
-	fmt.Print("input my type, D for Device, C for Client :")
-	if _, err = fmt.Scanf("%s\n", &myType); err != nil {
-		log.Error(err.Error())
-	}
-	if myType == "D" || myType == "d" {
-		myType = protocol.DEV_TYPE_WATCH
-	} else if myType == "C" || myType == "c" {
-		myType = protocol.DEV_TYPE_CLIENT
-	} else {
-		goto loopType
-	}
-	self.clientType = myType
-
-	// input password
-	myPass = ""
-	if myType == protocol.DEV_TYPE_CLIENT {
-		fmt.Print("input my password :")
-		if _, err = fmt.Scanf("%s\n", &myPass); err != nil {
-			log.Error(err.Error())
-		}
-	}
 	cmd := protocol.NewCmdSimple(protocol.REQ_LOGIN_CMD)
-	cmd.AddArg(myID)
-	cmd.AddArg(myType)
-	cmd.AddArg(myPass)
+	cmd.AddArg(self.clientID)
+	cmd.AddArg(self.clientType)
+	cmd.AddArg(self.clientPwd)
 
 	err = gatewayClient.Send(libnet.Json(cmd))
 	if err != nil {
@@ -161,10 +122,10 @@ loopType:
 	return nil
 }
 
-func (self *Client) procLoginServer() error {
+func login_server(self *Client) error {
 	var err error
 
-	self.msClient, err = libnet.Dial("tcp", self.msAddr)
+	self.session, err = libnet.Dial("tcp", self.msAddr)
 	if err != nil {
 		panic(err)
 	}
@@ -174,14 +135,14 @@ func (self *Client) procLoginServer() error {
 	cmd.AddArg(self.clientID)
 	cmd.AddArg(self.uuid)
 
-	err = self.msClient.Send(libnet.Json(cmd))
+	err = self.session.Send(libnet.Json(cmd))
 	if err != nil {
 		log.Error(err.Error())
 		return err
 	}
 
 	var c protocol.CmdSimple
-	err = self.msClient.ProcessOnce(func(msg *libnet.InBuffer) error {
+	err = self.session.ProcessOnce(func(msg *libnet.InBuffer) error {
 		log.Info(string(msg.Data))
 		err = json.Unmarshal(msg.Data, &c)
 		if err != nil {
@@ -201,20 +162,41 @@ func (self *Client) procLoginServer() error {
 	return nil
 }
 
-func (self *Client) procLogout() error {
-	cmd := protocol.NewCmdSimple(protocol.REQ_LOGOUT_CMD)
-	err := self.msClient.Send(libnet.Json(cmd))
-	if err != nil {
-		log.Error(err.Error())
+func cmd_logout(self *Client, args []string) error {
+	if self.bLogin == true {
+		cmd := protocol.NewCmdSimple(protocol.REQ_LOGOUT_CMD)
+		err := self.session.Send(libnet.Json(cmd))
+		self.bLogin = false
+		return err
 	}
-
-	return err
+	return nil
 }
 
-func (self *Client) procGetTopicList() error {
+func cmd_exit(self *Client, args []string) error {
+	if self != nil && self.session != nil {
+		self.session.Close()
+	}
+	bExit = true
+	return nil
+}
+
+func cmd_delete(self *Client, args []string) error {
+	if self.bLogin == false {
+		fmt.Println("NOT login yet. Please login first.")
+		return nil
+	}
+	fmt.Println("Not implemented yet.")
+	return nil
+}
+
+func cmd_topic(self *Client, args []string) error {
 	// get topic list
+	if self.bLogin == false {
+		fmt.Println("NOT login yet. Please login first.")
+		return nil
+	}
 	cmd := protocol.NewCmdSimple(protocol.REQ_GET_TOPIC_LIST_CMD)
-	err := self.msClient.Send(libnet.Json(cmd))
+	err := self.session.Send(libnet.Json(cmd))
 	if err != nil {
 		log.Error(err.Error())
 	}
@@ -222,7 +204,7 @@ func (self *Client) procGetTopicList() error {
 	return err
 }
 
-func (self *Client) procGetTopicListRsp(c *protocol.CmdSimple) error {
+func cmd_topic_rsp(self *Client, c *protocol.CmdSimple) error {
 	var num int
 	var err error
 
@@ -248,27 +230,23 @@ func (self *Client) procGetTopicListRsp(c *protocol.CmdSimple) error {
 
 	return nil
 }
-func (self *Client) procGetTopicMember() error {
-	// get topic member list
-	var input string
-	var err error
 
-	fmt.Print("input topic name :")
-	if _, err = fmt.Scanf("%s\n", &input); err != nil {
-		log.Error(err.Error())
+func cmd_list(self *Client, args []string) error {
+	if self.bLogin == false {
+		fmt.Println("NOT login yet. Please login first.")
+		return nil
 	}
-
+	if len(args) != 2 {
+		return common.SYNTAX_ERROR
+	}
 	cmd := protocol.NewCmdSimple(protocol.REQ_GET_TOPIC_MEMBER_CMD)
-	cmd.AddArg(input)
-	err = self.msClient.Send(libnet.Json(cmd))
-	if err != nil {
-		log.Error(err.Error())
-	}
+	cmd.AddArg(args[1])
+	err := self.session.Send(libnet.Json(cmd))
 
 	return err
 }
 
-func (self *Client) procGetTopicMemberRsp(c *protocol.CmdSimple) error {
+func cmd_list_rsp(self *Client, c *protocol.CmdSimple) error {
 	var num int
 	var err error
 
@@ -295,238 +273,154 @@ func (self *Client) procGetTopicMemberRsp(c *protocol.CmdSimple) error {
 	return nil
 }
 
-func (self *Client) procCreateTopic() error {
+func cmd_new(self *Client, args []string) error {
 	// CREATE TOPIC
-	var input string
-	fmt.Print("want to create a topic (y/n) :")
-	if _, err := fmt.Scanf("%s\n", &input); err != nil {
-		log.Error(err.Error())
+	if self.bLogin == false {
+		fmt.Println("NOT login yet. Please login first.")
+		return nil
 	}
-	if input == "y" {
-		cmd := protocol.NewCmdSimple(protocol.REQ_CREATE_TOPIC_CMD)
-		fmt.Print("CREATE_TOPIC_CMD | input topic name :")
-		if _, err := fmt.Scanf("%s\n", &input); err != nil {
-			log.Error(err.Error())
-		}
-		cmd.AddArg(input)
-
-		fmt.Print("CREATE_TOPIC_CMD | input alias name :")
-		if _, err := fmt.Scanf("%s\n", &input); err != nil {
-			log.Error(err.Error())
-		}
-		cmd.AddArg(input)
-
-		err := self.msClient.Send(libnet.Json(cmd))
-		if err != nil {
-			log.Error(err.Error())
-		}
+	if len(args) != 3 {
+		return common.SYNTAX_ERROR
 	}
-	return nil
-}
+	cmd := protocol.NewCmdSimple(protocol.REQ_CREATE_TOPIC_CMD)
+	cmd.AddArg(args[1])
+	cmd.AddArg(args[2])
 
-func (self *Client) procCreateTopicRsp(c *protocol.CmdSimple) error {
-	fmt.Println(c.GetCmdName() + " returns: " + c.GetArgs()[0])
-	if c.GetArgs()[0] != protocol.RSP_SUCCESS {
-		return errors.New(c.GetArgs()[0])
-	}
-	return nil
-}
-
-func (self *Client) procJoinTopic() error {
-	var input string
-	fmt.Print("want to join a topic? (y/n) :")
-	if _, err := fmt.Scanf("%s\n", &input); err != nil {
-		log.Error(err.Error())
-		return err
-	}
-	if input == "y" {
-		cmd := protocol.NewCmdSimple(protocol.REQ_JOIN_TOPIC_CMD)
-
-		fmt.Print("input topic name :")
-		if _, err := fmt.Scanf("%s\n", &input); err != nil {
-			fmt.Errorf(err.Error())
-			return err
-		}
-		cmd.AddArg(input)
-
-		fmt.Print("input alias name :")
-		if _, err := fmt.Scanf("%s\n", &input); err != nil {
-			fmt.Errorf(err.Error())
-			return err
-		}
-		cmd.AddArg(input)
-
-		err := self.msClient.Send(libnet.Json(cmd))
-		if err != nil {
-			fmt.Errorf(err.Error())
-			return err
-			log.Error(err.Error())
-		}
-	}
-	return nil
-}
-
-func (self *Client) procJoinTopicRsp(c *protocol.CmdSimple) error {
-	fmt.Println(c.GetCmdName() + " returns: " + c.GetArgs()[0])
-	if c.GetArgs()[0] != protocol.RSP_SUCCESS {
-		return errors.New(c.GetArgs()[0])
-	}
-	return nil
-}
-
-func (self *Client) procQuitTopic() error {
-	var input string
-	fmt.Print("want to quit a topic? (y/n) :")
-	if _, err := fmt.Scanf("%s\n", &input); err != nil {
-		log.Error(err.Error())
-		return err
-	}
-	if input == "y" {
-		cmd := protocol.NewCmdSimple(protocol.REQ_QUIT_TOPIC_CMD)
-
-		fmt.Print("input topic name :")
-		if _, err := fmt.Scanf("%s\n", &input); err != nil {
-			fmt.Errorf(err.Error())
-			return err
-		}
-		cmd.AddArg(input)
-
-		err := self.msClient.Send(libnet.Json(cmd))
-		if err != nil {
-			fmt.Errorf(err.Error())
-			return err
-			log.Error(err.Error())
-		}
-	}
-	return nil
-}
-
-func (self *Client) procQuitTopicRsp(c *protocol.CmdSimple) error {
-	fmt.Println(c.GetCmdName() + " returns: " + c.GetArgs()[0])
-	if c.GetArgs()[0] != protocol.RSP_SUCCESS {
-		return errors.New(c.GetArgs()[0])
-	}
-	return nil
-}
-
-func (self *Client) procAdd2Topic() error {
-	var input string
-	fmt.Print("want to add members into a topic? (y/n) :")
-	if _, err := fmt.Scanf("%s\n", &input); err != nil {
-		log.Error(err.Error())
-		return err
-	}
-	if input == "y" {
-		cmd := protocol.NewCmdSimple(protocol.REQ_ADD_2_TOPIC_CMD)
-
-		fmt.Print("input topic name :")
-		if _, err := fmt.Scanf("%s\n", &input); err != nil {
-			fmt.Errorf(err.Error())
-			return err
-		}
-		cmd.AddArg(input)
-
-		fmt.Print("input member ID :")
-		if _, err := fmt.Scanf("%s\n", &input); err != nil {
-			fmt.Errorf(err.Error())
-			return err
-		}
-		cmd.AddArg(input)
-
-		fmt.Print("input member name :")
-		if _, err := fmt.Scanf("%s\n", &input); err != nil {
-			fmt.Errorf(err.Error())
-			return err
-		}
-		cmd.AddArg(input)
-
-		err := self.msClient.Send(libnet.Json(cmd))
-		if err != nil {
-			fmt.Errorf(err.Error())
-			return err
-			log.Error(err.Error())
-		}
-	}
-	return nil
-}
-
-func (self *Client) procAdd2TopicRsp(c *protocol.CmdSimple) error {
-	fmt.Println(c.GetCmdName() + " returns: " + c.GetArgs()[0])
-	if c.GetArgs()[0] != protocol.RSP_SUCCESS {
-		return errors.New(c.GetArgs()[0])
-	}
-	return nil
-}
-
-func (self *Client) procKickTopic() error {
-	var input string
-	fmt.Print("want to kick member out of a topic? (y/n) :")
-	if _, err := fmt.Scanf("%s\n", &input); err != nil {
-		log.Error(err.Error())
-		return err
-	}
-	if input == "y" {
-		cmd := protocol.NewCmdSimple(protocol.REQ_KICK_TOPIC_CMD)
-
-		fmt.Print("input topic name :")
-		if _, err := fmt.Scanf("%s\n", &input); err != nil {
-			fmt.Errorf(err.Error())
-			return err
-		}
-		cmd.AddArg(input)
-
-		fmt.Print("input member ID :")
-		if _, err := fmt.Scanf("%s\n", &input); err != nil {
-			fmt.Errorf(err.Error())
-			return err
-		}
-		cmd.AddArg(input)
-
-		err := self.msClient.Send(libnet.Json(cmd))
-		if err != nil {
-			fmt.Errorf(err.Error())
-			return err
-			log.Error(err.Error())
-		}
-	}
-	return nil
-}
-
-func (self *Client) procKickTopicRsp(c *protocol.CmdSimple) error {
-	fmt.Println(c.GetCmdName() + " returns: " + c.GetArgs()[0])
-	if c.GetArgs()[0] != protocol.RSP_SUCCESS {
-		return errors.New(c.GetArgs()[0])
-	}
-	return nil
-}
-
-func (self *Client) procSendP2PMsg() error {
-	var input string
-
-	cmd := protocol.NewCmdSimple(protocol.REQ_SEND_P2P_MSG_CMD)
-
-	fmt.Print("send the id you want to talk :")
-	if _, err := fmt.Scanf("%s\n", &input); err != nil {
-		log.Error(err.Error())
-	}
-
-	cmd.AddArg(input)
-
-	fmt.Print("input msg :")
-	if _, err := fmt.Scanf("%s\n", &input); err != nil {
-		log.Error(err.Error())
-	}
-
-	cmd.AddArg(input)
-
-	err := self.msClient.Send(libnet.Json(cmd))
+	err := self.session.Send(libnet.Json(cmd))
 	if err != nil {
 		log.Error(err.Error())
 	}
+	return err
+}
+
+func cmd_new_rsp(self *Client, c *protocol.CmdSimple) error {
+	fmt.Println(c.GetCmdName() + " returns: " + c.GetArgs()[0])
+	if c.GetArgs()[0] != protocol.RSP_SUCCESS {
+		return errors.New(c.GetArgs()[0])
+	}
 	return nil
 }
 
-func (self *Client) procSendP2PMsgRsp(c *protocol.CmdSimple) error {
+func cmd_join(self *Client, args []string) error {
+	if self.bLogin == false {
+		fmt.Println("NOT login yet. Please login first.")
+		return nil
+	}
+	if len(args) != 3 {
+		return common.SYNTAX_ERROR
+	}
+	cmd := protocol.NewCmdSimple(protocol.REQ_JOIN_TOPIC_CMD)
+	cmd.AddArg(args[1])
+	cmd.AddArg(args[2])
+
+	err := self.session.Send(libnet.Json(cmd))
+	if err != nil {
+		fmt.Errorf(err.Error())
+	}
+	return err
+}
+
+func cmd_join_rsp(self *Client, c *protocol.CmdSimple) error {
+	fmt.Println(c.GetCmdName() + " returns: " + c.GetArgs()[0])
+	if c.GetArgs()[0] != protocol.RSP_SUCCESS {
+		return errors.New(c.GetArgs()[0])
+	}
+	return nil
+}
+
+func cmd_quit(self *Client, args []string) error {
+	if self.bLogin == false {
+		fmt.Println("NOT login yet. Please login first.")
+		return nil
+	}
+	if len(args) != 2 {
+		return common.SYNTAX_ERROR
+	}
+	cmd := protocol.NewCmdSimple(protocol.REQ_QUIT_TOPIC_CMD)
+	cmd.AddArg(args[1])
+
+	err := self.session.Send(libnet.Json(cmd))
+	return err
+}
+
+func cmd_quit_rsp(self *Client, c *protocol.CmdSimple) error {
+	fmt.Println(c.GetCmdName() + " returns: " + c.GetArgs()[0])
+	if c.GetArgs()[0] != protocol.RSP_SUCCESS {
+		return errors.New(c.GetArgs()[0])
+	}
+	return nil
+}
+
+// add <topic> <id> <alias>
+func cmd_add(self *Client, args []string) error {
+	if self.bLogin == false {
+		fmt.Println("NOT login yet. Please login first.")
+		return nil
+	}
+	if len(args) != 4 {
+		return common.SYNTAX_ERROR
+	}
+	cmd := protocol.NewCmdSimple(protocol.REQ_ADD_2_TOPIC_CMD)
+	cmd.AddArg(args[1])
+	cmd.AddArg(args[2])
+	cmd.AddArg(args[3])
+
+	err := self.session.Send(libnet.Json(cmd))
+	return err
+}
+
+func cmd_add_rsp(self *Client, c *protocol.CmdSimple) error {
+	fmt.Println(c.GetCmdName() + " returns: " + c.GetArgs()[0])
+	if c.GetArgs()[0] != protocol.RSP_SUCCESS {
+		return errors.New(c.GetArgs()[0])
+	}
+	return nil
+}
+
+// kick <topic> <id>
+func cmd_kick(self *Client, args []string) error {
+	if self.bLogin == false {
+		fmt.Println("NOT login yet. Please login first.")
+		return nil
+	}
+	if len(args) != 3 {
+		return common.SYNTAX_ERROR
+	}
+	cmd := protocol.NewCmdSimple(protocol.REQ_KICK_TOPIC_CMD)
+	cmd.AddArg(args[1])
+	cmd.AddArg(args[2])
+
+	err := self.session.Send(libnet.Json(cmd))
+	return err
+}
+
+func cmd_kick_rsp(self *Client, c *protocol.CmdSimple) error {
+	fmt.Println(c.GetCmdName() + " returns: " + c.GetArgs()[0])
+	if c.GetArgs()[0] != protocol.RSP_SUCCESS {
+		return errors.New(c.GetArgs()[0])
+	}
+	return nil
+}
+
+// sendto <id> <msg>
+func cmd_sendto(self *Client, args []string) error {
+	if self.bLogin == false {
+		fmt.Println("NOT login yet. Please login first.")
+		return nil
+	}
+	if len(args) != 3 {
+		return common.SYNTAX_ERROR
+	}
+
+	cmd := protocol.NewCmdSimple(protocol.REQ_SEND_P2P_MSG_CMD)
+	cmd.AddArg(args[1])
+	cmd.AddArg(args[2])
+
+	err := self.session.Send(libnet.Json(cmd))
+	return err
+}
+
+func cmd_sendto_rsp(self *Client, c *protocol.CmdSimple) error {
 	fmt.Println(c.GetCmdName() + " returns: " + c.GetArgs()[0])
 	if c.GetArgs()[0] == protocol.RSP_SUCCESS {
 		fmt.Println("uuid: " + c.GetArgs()[1])
@@ -535,7 +429,7 @@ func (self *Client) procSendP2PMsgRsp(c *protocol.CmdSimple) error {
 }
 
 // [msg, fromID, uuid]
-func (self *Client) procSendP2PMsgReq(c *protocol.CmdSimple) error {
+func incoming_p2p_msg(self *Client, c *protocol.CmdSimple) error {
 	fmt.Println(c.GetArgs()[1] + "  says : " + c.GetArgs()[0])
 	if len(c.GetArgs()) >= 3 {
 		cmd := protocol.NewCmdSimple(protocol.IND_ACK_P2P_STATUS_CMD)
@@ -543,7 +437,7 @@ func (self *Client) procSendP2PMsgReq(c *protocol.CmdSimple) error {
 		cmd.AddArg(protocol.P2P_ACK_READ)
 		cmd.AddArg(c.GetArgs()[1])
 
-		err := self.msClient.Send(libnet.Json(cmd))
+		err := self.session.Send(libnet.Json(cmd))
 		if err != nil {
 			log.Error(err.Error())
 		}
@@ -551,38 +445,37 @@ func (self *Client) procSendP2PMsgReq(c *protocol.CmdSimple) error {
 	return nil
 }
 
-func (self *Client) procSendTopicMsg() error {
-	var input string
+// send <msg>[ <topic>]
+func cmd_send(self *Client, args []string) error {
+	if self.bLogin == false {
+		fmt.Println("NOT login yet. Please login first.")
+		return nil
+	}
+	if self.clientType == protocol.DEV_TYPE_CLIENT {
+		if len(args) != 3 {
+			return common.SYNTAX_ERROR
+		}
+	} else if len(args) != 2 {
+		return common.SYNTAX_ERROR
+	}
 
 	cmd := protocol.NewCmdSimple(protocol.REQ_SEND_TOPIC_MSG_CMD)
-
-	fmt.Print("input msg :")
-	if _, err := fmt.Scanf("%s\n", &input); err != nil {
-		log.Error(err.Error())
-	}
-	cmd.AddArg(input)
+	cmd.AddArg(args[1])
 
 	if self.clientType == protocol.DEV_TYPE_CLIENT {
-		fmt.Print("input the topic you want to talk :")
-		if _, err := fmt.Scanf("%s\n", &input); err != nil {
-			log.Error(err.Error())
-		}
-		cmd.AddArg(input)
+		cmd.AddArg(args[2])
 	}
 
-	err := self.msClient.Send(libnet.Json(cmd))
-	if err != nil {
-		log.Error(err.Error())
-	}
-	return nil
+	err := self.session.Send(libnet.Json(cmd))
+	return err
 }
 
-func (self *Client) procSendTopicMsgRsp(c *protocol.CmdSimple) error {
+func cmd_send_rsp(self *Client, c *protocol.CmdSimple) error {
 	fmt.Println(c.GetCmdName() + " returns: " + c.GetArgs()[0])
 	return nil
 }
 
-func (self *Client) procSendTopicMsgReq(c *protocol.CmdSimple) error {
+func incoming_topic_msg(self *Client, c *protocol.CmdSimple) error {
 	msg := c.GetArgs()[0]
 	topicName := c.GetArgs()[1]
 	fromID := c.GetArgs()[2]
@@ -595,30 +488,55 @@ func (self *Client) procSendTopicMsgReq(c *protocol.CmdSimple) error {
 	return nil
 }
 
-func main() {
-	flag.Parse()
-	cfg, err := LoadConfig(*InputConfFile)
-	if err != nil {
-		log.Error(err.Error())
-		return
+func cmd_login(self *Client, args []string) error {
+	if self.bLogin {
+		fmt.Println("You are already login, pls logout first")
+		return nil
+	}
+	if len(args) != 3 && len(args) != 4 {
+		return common.SYNTAX_ERROR
+	}
+	if args[2] != "D" && args[2] != "d" && args[2] != "C" && args[2] != "c" {
+		return common.SYNTAX_ERROR
 	}
 
-	client := NewClient()
-	err = client.procLoginGateway(cfg)
+	self.clientID = args[1]
+
+	if args[2] == "D" || args[2] == "d" {
+		self.clientType = protocol.DEV_TYPE_WATCH
+	} else if args[2] == "C" || args[2] == "c" {
+		self.clientType = protocol.DEV_TYPE_CLIENT
+	} else {
+	}
+
+	self.clientPwd = ""
+	if self.clientType == protocol.DEV_TYPE_CLIENT {
+		if len(args) != 4 {
+			return common.SYNTAX_ERROR
+		}
+		self.clientPwd = args[3]
+	}
+	// Load config
+	fmt.Println("config file:" + *InputConfFile)
+
+	fmt.Println("config file loaded")
+	err := login_gateway(self)
 	if err != nil {
 		panic(err)
 	}
 
-	err = client.procLoginServer()
+	err = login_server(self)
 	if err != nil {
 		panic(err)
 	}
 
-	go heartBeat(cfg, client.msClient)
+	self.bLogin = true
+
+	go heartBeat(self.cfg, self.session)
 
 	var c protocol.CmdSimple
-	go client.msClient.Process(func(msg *libnet.InBuffer) error {
-		log.Info(string(msg.Data))
+	go self.session.Process(func(msg *libnet.InBuffer) error {
+		fmt.Println(string(msg.Data))
 		err = json.Unmarshal(msg.Data, &c)
 		if err != nil {
 			log.Error("error:", err)
@@ -628,95 +546,166 @@ func main() {
 		switch c.GetCmdName() {
 
 		case protocol.RSP_GET_TOPIC_LIST_CMD:
-			client.procGetTopicListRsp(&c)
+			cmd_topic_rsp(self, &c)
 
 		case protocol.RSP_GET_TOPIC_MEMBER_CMD:
-			client.procGetTopicMemberRsp(&c)
+			cmd_list_rsp(self, &c)
 
 		case protocol.RSP_CREATE_TOPIC_CMD:
-			client.procCreateTopicRsp(&c)
+			cmd_new_rsp(self, &c)
 
 		case protocol.RSP_JOIN_TOPIC_CMD:
-			client.procJoinTopicRsp(&c)
+			cmd_join_rsp(self, &c)
 
 		case protocol.RSP_QUIT_TOPIC_CMD:
-			client.procQuitTopicRsp(&c)
+			cmd_quit_rsp(self, &c)
 
 		case protocol.RSP_ADD_2_TOPIC_CMD:
-			client.procAdd2TopicRsp(&c)
+			cmd_add_rsp(self, &c)
 
 		case protocol.RSP_KICK_TOPIC_CMD:
-			client.procKickTopicRsp(&c)
+			cmd_kick_rsp(self, &c)
 
 		case protocol.RSP_SEND_P2P_MSG_CMD:
-			client.procSendP2PMsgRsp(&c)
+			cmd_sendto_rsp(self, &c)
 
 		case protocol.IND_ACK_P2P_STATUS_CMD:
 			fmt.Println("msg sent [uuid=" + c.GetArgs()[0] + "] status: " + c.GetArgs()[1])
 
-		case protocol.REQ_SEND_P2P_MSG_CMD:
-			client.procSendP2PMsgReq(&c)
+		case protocol.IND_SEND_P2P_MSG_CMD:
+			incoming_p2p_msg(self, &c)
 
-		case protocol.REQ_SEND_TOPIC_MSG_CMD:
-			client.procSendTopicMsgReq(&c)
+		case protocol.IND_SEND_TOPIC_MSG_CMD:
+			incoming_topic_msg(self, &c)
 		}
 
 		return nil
 	})
+	return nil
+}
 
-	for {
-		input, err := GetInputCommand()
-		if err != nil {
-			DisplayCommandList()
-			continue
+func Help(self *Client, args []string) error {
+	if len(args) <= 1 {
+		help := "RDA Watch Client.\n" +
+			"Usage:<cmd> [<arg0> <arg1> ...]\n" +
+			"<cmd> can be:\n"
+		for k, v := range help_string {
+			help += k + "\t----\t" + v.desc
 		}
-		/*
-			fmt.Println("0. Get your topic list")
-			fmt.Println("1. Get member list of specific topic")
-			fmt.Println("2. Create topic")
-			fmt.Println("3. Add someone into the topic, only for topic creator")
-			fmt.Println("4. Kick someone out of the topic, only for topic creator")
-			fmt.Println("5. Join topic")
-			fmt.Println("6. Quit topic")
-			fmt.Println("7. Send p2p message")
-			fmt.Println("8. Send topic message")
-		*/
-		switch input {
-		case "0":
-			client.procGetTopicList()
-		case "1":
-			client.procGetTopicMember()
-		case "2":
-			client.procCreateTopic()
-		case "3":
-			client.procAdd2Topic()
-		case "4":
-			client.procKickTopic()
-		case "5":
-			client.procJoinTopic()
-		case "6":
-			client.procQuitTopic()
-		case "7":
-			client.procSendP2PMsg()
-		case "8":
-			client.procSendTopicMsg()
-		case "h", "H", "help", "Help":
-			DisplayCommandList()
-		case "q", "Q", "quit", "Quit":
-			fmt.Println("client quit...")
-			client.procLogout()
-
-			client.msClient.Close()
-
-			// msgServerClient.Process(func(msg *libnet.InBuffer) error {
-			// 	log.Info(string(msg.Data))
-			// 	return nil
-			// })
-
-			log.Flush()
-
-			return
+		help += `please type "help <cmd>" to get help for specific command.` + "\n"
+		fmt.Print(help)
+	} else {
+		if v, ok := help_string[args[1]]; ok {
+			fmt.Print(v.desc)
+			fmt.Print(v.detail)
 		}
 	}
+	return nil
+}
 
+func main() {
+	flag.Parse()
+
+	client := NewClient()
+
+	help_string = map[string]HelpInfo{
+		"help": {
+			"RDA Watch Client.\n",
+			"",
+			Help,
+		},
+		"login": HelpInfo{
+			"Login RDA Watch Server\n",
+			"login <id> <type> <pwd>\n" +
+				"<type>: \"D\" for watch, \"C\" for app client\n" +
+				"NOTE: watch doesn't need to provide <pwd>\n",
+			cmd_login,
+		},
+		"logout": HelpInfo{
+			"Logout from RDA Watch Server\n",
+			"logout\n",
+			cmd_logout,
+		},
+		"exit": {
+			"Close this program and exit\n",
+			"exit\n",
+			cmd_exit,
+		},
+		"topic": {
+			"Get your own topic list\n",
+			"topic\n",
+			cmd_topic,
+		},
+		"new": {
+			"create a new topic\n",
+			"new <topic_name> <alias>\n",
+			cmd_new,
+		},
+
+		"delete": {
+			"delete a topic, only for topic creator\n",
+			"delete <topic_name>\n",
+			cmd_delete,
+		},
+		"list": {
+			"Get member list of specific topic. You MUST be a member of the topic.\n",
+			"list <topic_name>\n",
+			cmd_list,
+		},
+		"add": {
+			"Add someone into the topic, only for topic creator\n",
+			"add <topic> <id> <alias>\n",
+			cmd_add,
+		},
+		"kick": {
+			"Kick someone out of the topic, only for topic creator\n",
+			"kick <topic> <id>\n",
+			cmd_kick,
+		},
+		"join": {
+			"join a topic\n",
+			"join <topic> <alias>\n",
+			cmd_join,
+		},
+		"quit": {
+			"Quit from a topic. Usage:\n",
+			"quit <topic_name>\n",
+			cmd_quit,
+		},
+		"send": {
+			"send topic message\n",
+			"send <msg>[ <topic>]\n",
+			cmd_send,
+		},
+		"sendto": {
+			"send p2p message\n",
+			"sendto <id> <msg>\n",
+			cmd_sendto,
+		},
+	}
+
+	Help(client, nil)
+	r := bufio.NewReader(os.Stdin)
+
+	for {
+		fmt.Print("Command> ")
+		b, _, _ := r.ReadLine()
+		line := string(b)
+
+		tokens := strings.Split(line, " ")
+
+		if v, ok := help_string[tokens[0]]; ok {
+			ret := v.f(client, tokens)
+			if ret == common.SYNTAX_ERROR {
+				fmt.Printf("Syntax error, pls type \"help %s\" to get more information\n", tokens[0])
+			} else if ret != nil {
+				fmt.Println(ret.Error())
+			}
+			if bExit {
+				break
+			}
+		} else {
+			fmt.Println("Unknown command:", tokens[0])
+		}
+	}
 }

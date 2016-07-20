@@ -232,6 +232,15 @@ func (self *MsgServer) procJoinTopic(member *mongo_store.Member, topicName strin
 
 	// topic cache and store
 	topicCacheData.AddMember(member)
+	// update AliveMemberNumMap[server]
+	if sessionCacheData.Alive {
+		if v, ok := topicCacheData.AliveMemberNumMap[sessionCacheData.MsgServerAddr]; ok {
+			topicCacheData.AliveMemberNumMap[sessionCacheData.MsgServerAddr] = v + 1
+		} else {
+			topicCacheData.AliveMemberNumMap[sessionCacheData.MsgServerAddr] = 1
+		}
+	}
+
 	err = self.topicCache.Set(topicCacheData)
 	if err != nil {
 		log.Error(err.Error())
@@ -270,6 +279,7 @@ func (self *MsgServer) procQuitTopic(clientID string, topicName string) error {
 		return err
 	}
 	log.Infof("member %s removed from topic CACHE %s", clientID, topicName)
+
 	err = self.mongoStore.Set(topicCacheData.TopicStoreData)
 	if err != nil {
 		log.Error(err.Error())
@@ -278,29 +288,47 @@ func (self *MsgServer) procQuitTopic(clientID string, topicName string) error {
 	log.Infof("member %s removed from topic STORE %s", clientID, topicName)
 
 	// update session cache and store
-	sessionStoreData, err = self.mongoStore.GetSessionFromCid(clientID)
-	if sessionStoreData == nil {
-		log.Warningf("ID %s not registered in STORE", clientID)
-	} else {
-		log.Infof("remove topic %s from Client STORE %s", topicName, clientID)
-		sessionStoreData.RemoveTopic(topicName)
-		err = self.mongoStore.Set(sessionStoreData)
+	sessionCacheData, err = self.sessionCache.Get(clientID)
+	if sessionCacheData != nil {
+		log.Infof("remove topic %s from Client CACHE %s", topicName, clientID)
+		sessionCacheData.RemoveTopic(topicName)
+		err = self.sessionCache.Set(sessionCacheData)
+		if err != nil {
+			log.Error(err.Error())
+			return err
+		}
+		log.Infof("topic %s removed from Client CACHE %s", topicName, clientID)
+		err = self.mongoStore.Set(sessionCacheData.SessionStoreData)
 		if err != nil {
 			log.Error(err.Error())
 			return err
 		}
 		log.Infof("topic %s removed from Client STORE %s", topicName, clientID)
-
-		sessionCacheData, err = self.sessionCache.Get(clientID)
-		if sessionCacheData != nil {
-			log.Infof("remove topic %s from Client CACHE %s", topicName, clientID)
-			sessionCacheData.RemoveTopic(topicName)
-			err = self.sessionCache.Set(sessionCacheData)
+		if sessionCacheData.Alive {
+			// update AliveMemberNumMap[server]
+			if v, ok := topicCacheData.AliveMemberNumMap[sessionCacheData.MsgServerAddr]; ok {
+				if v > 0 {
+					topicCacheData.AliveMemberNumMap[sessionCacheData.MsgServerAddr] = v - 1
+				} else {
+					topicCacheData.AliveMemberNumMap[sessionCacheData.MsgServerAddr] = 0
+				}
+				self.topicCache.Set(topicCacheData)
+			}
+		}
+	} else {
+		sessionStoreData, err = self.mongoStore.GetSessionFromCid(clientID)
+		if sessionStoreData == nil {
+			log.Warningf("ID %s not registered in STORE", clientID)
+		} else {
+			log.Infof("remove topic %s from Client STORE %s", topicName, clientID)
+			sessionStoreData.RemoveTopic(topicName)
+			err = self.mongoStore.Set(sessionStoreData)
 			if err != nil {
 				log.Error(err.Error())
 				return err
 			}
-			log.Infof("topic %s removed from Client CACHE %s", topicName, clientID)
+			log.Infof("topic %s removed from Client STORE %s", topicName, clientID)
+
 		}
 	}
 	return nil
@@ -308,6 +336,13 @@ func (self *MsgServer) procQuitTopic(clientID string, topicName string) error {
 
 func (self *MsgServer) parseProtocol(cmd []byte, session *libnet.Session) error {
 	var c protocol.CmdSimple
+
+	// receive msg, that means client alive
+	if session.State != nil {
+		self.scanSessionMutex.Lock()
+		session.State.(*base.SessionState).Alive = true
+		self.scanSessionMutex.Unlock()
+	}
 	err := json.Unmarshal(cmd, &c)
 	if err != nil {
 		log.Error("error:", err)

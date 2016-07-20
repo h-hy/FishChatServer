@@ -60,12 +60,13 @@ var InputConfFile = flag.String("conf_file", "gateway.json", "input conf file na
 
 func handleSession(gw *Gateway, session *libnet.Session) {
 	session.Process(func(msg *libnet.InBuffer) error {
+		log.Info("gateway received:===", string(msg.Data), "===")
 		err := gw.parseProtocol(msg.Data, session)
 		if err != nil {
-			log.Error(err.Error())
+			log.Error("error:", err)
 		}
 
-		return nil
+		return err
 	})
 }
 

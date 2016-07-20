@@ -67,7 +67,10 @@ func (self *ProtoProc) procLogin(cmd protocol.Cmd, session *libnet.Session) erro
 
 	ClientID := cmd.GetArgs()[0]
 	ClientType := cmd.GetArgs()[1]
-	ClientPwd := cmd.GetArgs()[2]
+	ClientPwd := ""
+	if len(cmd.GetArgs()) == 3 {
+		ClientPwd = cmd.GetArgs()[2]
+	}
 
 	// get the session cache
 	sessionCacheData, err := self.gateway.sessionCache.Get(ClientID)
@@ -93,7 +96,7 @@ func (self *ProtoProc) procLogin(cmd protocol.Cmd, session *libnet.Session) erro
 		// for cache data, MsgServer MUST update local & remote addr.
 		sessionCacheData = redis_store.NewSessionCacheData(sessionStoreData, session.Conn().RemoteAddr().String(), msgServer, uuid)
 		log.Info(sessionCacheData)
-		common.StoreData(self.gateway.sessionCache, sessionCacheData)
+		self.gateway.sessionCache.Set(sessionCacheData)
 	}
 	//
 	resp := protocol.NewCmdSimple(protocol.RSP_LOGIN_CMD)

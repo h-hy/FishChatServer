@@ -34,6 +34,9 @@ const (
 )
 
 const (
+	//SEND_PING
+	SEND_PING_CMD = "PING"
+
 	REQ_LOGIN_CMD = "REQ_LOGIN"
 	RSP_LOGIN_CMD = "RSP_LOGIN"
 	/*
@@ -67,6 +70,7 @@ const (
 	*/
 
 	REQ_SEND_P2P_MSG_CMD     = "REQ_SEND_P2P_MSG"
+	IND_SEND_P2P_MSG_CMD     = "IND_SEND_P2P_MSG"
 	RSP_SEND_P2P_MSG_CMD     = "RSP_SEND_P2P_MSG"
 	ROUTE_SEND_P2P_MSG_CMD   = "ROUTE_SEND_P2P_MSG"
 	IND_ACK_P2P_STATUS_CMD   = "IND_ACK_P2P_STATUS"
@@ -118,7 +122,7 @@ const (
 
 	   发送给消息接受者的消息
 	   MsgServer -> device/client
-	       REQ_SEND_P2P_MSG_CMD
+	       IND_SEND_P2P_MSG_CMD
 	       arg0: Msg           //消息内容
 	       arg1: FromID        //发送方用户ID
 	       arg2: uuid          //MsgServer分配的消息uuid，可选，如果提供了则须IND_ACK_P2P_MSG_CMD(ClientID, uuid)
@@ -197,6 +201,7 @@ const (
 	REQ_SEND_TOPIC_MSG_CMD   = "REQ_SEND_TOPIC_MSG"
 	RSP_SEND_TOPIC_MSG_CMD   = "RSP_SEND_TOPIC_MSG"
 	ROUTE_SEND_TOPIC_MSG_CMD = "ROUTE_SEND_TOPIC_MSG"
+	IND_SEND_TOPIC_MSG_CMD   = "IND_SEND_TOPIC_MSG"
 	/*
 	   device/client -> MsgServer -> Router
 	       REQ_SEND_TOPIC_MSG_CMD
@@ -218,7 +223,7 @@ const (
 
 	   发送给消息接受者的消息
 	   MsgServer -> device/client
-	       REQ_SEND_TOPIC_MSG_CMD
+	       IND_SEND_TOPIC_MSG_CMD
 	       arg0: Msg           //消息内容
 	       arg1: TopicName     //群组名
 	       arg2: ClientID      //发送方用户ID
@@ -230,7 +235,6 @@ const (
 	/*
 	   device/client -> MsgServer
 	       REQ_GET_TOPIC_LIST_CMD
-	       arg0: ClientID         //用户ID
 
 	   MsgServer -> device/client
 	       RSP_GET_TOPIC_LIST_CMD
@@ -269,8 +273,6 @@ const (
 )
 
 const (
-	//SEND_PING
-	SEND_PING_CMD = "SEND_PING"
 	//SEND_CLIENT_ID CLIENT_ID
 	SEND_CLIENT_ID_CMD = "SEND_CLIENT_ID"
 	//SEND_CLIENT_ID_FOR_TOPIC ID
@@ -303,10 +305,6 @@ const (
 const (
 	STORE_SESSION_CMD = "STORE_SESSION"
 	STORE_TOPIC_CMD   = "STORE_TOPIC"
-)
-
-const (
-	PING = "PING"
 )
 
 type Cmd interface {

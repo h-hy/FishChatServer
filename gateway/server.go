@@ -57,7 +57,6 @@ func (self *Gateway) parseProtocol(cmd []byte, session *libnet.Session) error {
 	var c protocol.CmdSimple
 	err := json.Unmarshal(cmd, &c)
 	if err != nil {
-		log.Error("error:", err)
 		return err
 	}
 
@@ -67,7 +66,6 @@ func (self *Gateway) parseProtocol(cmd []byte, session *libnet.Session) error {
 	case protocol.REQ_LOGIN_CMD:
 		err = pp.procLogin(&c, session)
 		if err != nil {
-			log.Error("error:", err)
 			return err
 		}
 	}

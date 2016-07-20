@@ -18,28 +18,29 @@ package common
 import (
 	"sync"
 	"time"
-	"github.com/oikomi/FishChatServer/log"
+
 	"github.com/oikomi/FishChatServer/libnet"
+	"github.com/oikomi/FishChatServer/log"
 	"github.com/oikomi/FishChatServer/protocol"
 )
 
 type HeartBeat struct {
-	name       string
-	session    *libnet.Session
-	mu         sync.Mutex
-	timeout    time.Duration
-	expire     time.Duration
-	fails      uint64
-	threshold  uint64
+	name      string
+	session   *libnet.Session
+	mu        sync.Mutex
+	timeout   time.Duration
+	expire    time.Duration
+	fails     uint64
+	threshold uint64
 }
 
 func NewHeartBeat(name string, session *libnet.Session, timeout time.Duration, expire time.Duration, limit uint64) *HeartBeat {
-	return &HeartBeat {
-		name      : name,
-		session   : session,
-		timeout   : timeout,
-		expire    : expire,
-		threshold : limit,
+	return &HeartBeat{
+		name:      name,
+		session:   session,
+		timeout:   timeout,
+		expire:    expire,
+		threshold: limit,
 	}
 }
 
@@ -63,13 +64,12 @@ func (self *HeartBeat) Beat() {
 		case <-timer.C:
 			go func() {
 				cmd := protocol.NewCmdSimple(protocol.SEND_PING_CMD)
-				cmd.AddArg(protocol.PING)
 				err := self.session.Send(libnet.Json(cmd))
 				if err != nil {
 					log.Error(err.Error())
 				}
 			}()
-		//case <-ttl:
+			//case <-ttl:
 			//break
 		}
 	}
@@ -87,4 +87,3 @@ func (self *HeartBeat) Receive() {
 		}
 	}
 }
-
