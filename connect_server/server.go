@@ -20,7 +20,7 @@ import (
 	"flag"
 	"sync"
 	"time"
-	"fmt"
+	// "fmt"
 	"bytes"
 	"errors"
 
@@ -65,7 +65,8 @@ type ConnectServer struct {
 }
 
 
-func NewMsgServer(cfg *ConnectServerConfig, rs *redis_store.RedisStore) *ConnectServer {
+// func NewMsgServer(cfg *ConnectServerConfig, rs *redis_store.RedisStore) *ConnectServer {
+func NewMsgServer(cfg *ConnectServerConfig) *ConnectServer {
 	return &ConnectServer{
 		cfg:             cfg,		//配置
 		msgServerClientMap : make(map[string]*msgServerClientState),	//已经连接的消息服务器表
@@ -73,10 +74,10 @@ func NewMsgServer(cfg *ConnectServerConfig, rs *redis_store.RedisStore) *Connect
 		channels:        make(connect_base.ChannelMap),
 		topics:          make(protocol.TopicMap),
 		server:          new(connect_libnet.Server),
-		sessionCache:    redis_store.NewSessionCache(rs),
-		topicCache:      redis_store.NewTopicCache(rs),
-		offlineMsgCache: redis_store.NewOfflineMsgCache(rs),
-		p2pStatusCache:  redis_store.NewP2pStatusCache(rs),
+		// sessionCache:    redis_store.NewSessionCache(rs),
+		// topicCache:      redis_store.NewTopicCache(rs),
+		// offlineMsgCache: redis_store.NewOfflineMsgCache(rs),
+		// p2pStatusCache:  redis_store.NewP2pStatusCache(rs),
 		mongoStore:      mongo_store.NewMongoStore(cfg.Mongo.Addr, cfg.Mongo.Port, cfg.Mongo.User, cfg.Mongo.Password),
 	}
 }
@@ -114,13 +115,13 @@ func (self *ConnectServer) procOffline(ID string) {
 		self.sessions[ID].Close()
 		delete(self.sessions, ID)
 
-		sessionCacheData, err := self.sessionCache.Get(ID)
-		if err != nil {
-			log.Errorf("ID(%s) no session cache", ID)
-			return
-		}
-		sessionCacheData.Alive = false
-		self.sessionCache.Set(sessionCacheData)
+		// sessionCacheData, err := self.sessionCache.Get(ID)
+		// if err != nil {
+		// 	log.Errorf("ID(%s) no session cache", ID)
+		// 	return
+		// }
+		// sessionCacheData.Alive = false
+		// self.sessionCache.Set(sessionCacheData)
 	}
 }
 
@@ -131,18 +132,19 @@ var data_begin []byte  = []byte{'{','<'}
 var data_end []byte  = []byte{'>','}'}
 func (self *ConnectServer) parseProtocol(cmd []byte, session *connect_libnet.Session) error {
 	var c protocol.CmdSimple
-	fmt.Printf("parseProtocol\n\n")
+	// fmt.Printf("parseProtocol\n")
+	// fmt.Printf("cmd=%s\n",cmd)
 
 	var index,nowindex,last_index int
 	index = bytes.Index(cmd,data_begin)
 	if (index==-1){
-		return errors.New("cmd ERROR")
+		return errors.New("cmd ERROR1")
 	}
 	nowindex=index+1
 	//数据头定位完毕
 	infos := bytes.Split(cmd[0:index],info_spilt)
 	if (len(infos) != 4 ){
-		return errors.New("cmd ERROR")
+		return errors.New("cmd ERROR2")
 	}
 	c.Infos=make(map[string]string)
 	c.Infos["ID"]=string(infos[0])
@@ -153,13 +155,13 @@ func (self *ConnectServer) parseProtocol(cmd []byte, session *connect_libnet.Ses
 	//包头信息提取完毕
 	last_index = bytes.Index(cmd,data_end)
 	if (index==-1){
-		return errors.New("cmd ERROR")
+		return errors.New("cmd ERROR3")
 	}
 	//数据尾定位完毕
 
 	index = bytes.Index(cmd[nowindex:],data_spilt)
 	if (index==-1){
-		return errors.New("cmd ERROR")
+		return errors.New("cmd ERROR4")
 	}
 	c.CmdName = string(cmd[nowindex+1:nowindex+index])
 	nowindex+=index+1
@@ -189,8 +191,9 @@ func (self *ConnectServer) parseProtocol(cmd []byte, session *connect_libnet.Ses
 	
 	if session.State == nil {
 		self.scanSessionMutex.Lock()
-		self.sessions[IMEI] = session
-		self.sessions[IMEI].State = connect_base.NewSessionState(true, IMEI, "Device")
+		session.IMEI = IMEI
+		self.sessions[session.IMEI] = session
+		self.sessions[session.IMEI].State = connect_base.NewSessionState(true, session.IMEI, "Device")
 		self.scanSessionMutex.Unlock()
 	}
 

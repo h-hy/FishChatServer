@@ -370,6 +370,9 @@ func (self *MsgServer) parseProtocol(cmd []byte, session *libnet.Session) error 
 		}
 	case protocol.SUBSCRIBE_CHANNEL_CMD:
 		pp.procSubscribeChannel(&c, session)
+	case protocol.ACTION_GO_OFFLINE_CMD:
+		pp.procGoOffLine(&c, session)
+
 
 	case protocol.REQ_LOGIN_CMD:
 		err = pp.procLogin(&c, session)

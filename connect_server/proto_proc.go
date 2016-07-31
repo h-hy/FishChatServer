@@ -18,7 +18,7 @@ package main
 import (
 	"flag"
 	"errors"
-	_ "fmt"
+	// "fmt"
 	// "strconv"
 
 	"github.com/oikomi/FishChatServer/connect_base"
@@ -80,7 +80,7 @@ func (self *ProtoProc) procGetMinLoadMsgServer() string {
 
 func (self *ProtoProc) procCheckMsgServer(session *connect_libnet.Session) error {
 	if (	session.State.(*connect_base.SessionState).MsgServer=="" || 
-			self.connectServer.msgServerClientMap[session.State.(*connect_base.SessionState).MsgServer] ==nil || 
+			self.connectServer.msgServerClientMap[session.State.(*connect_base.SessionState).MsgServer] == nil || 
 			self.connectServer.msgServerClientMap[session.State.(*connect_base.SessionState).MsgServer].Valid != true){
 		session.State.(*connect_base.SessionState).MsgServer=self.procGetMinLoadMsgServer()
 	}
@@ -103,3 +103,13 @@ func (self *ProtoProc) procTransferMsgServer(cmd protocol.Cmd,session *connect_l
 	}
 	return nil
 }
+
+// func (self *ProtoProc) procGoOffLine(cmd protocol.Cmd, session *connect_libnet.Session) error {
+// 	var c protocol.CmdSimple
+// 	c.Infos=make(map[string]string)
+// 	c.Infos["ID"]=string(infos[0])
+// 	c.Infos["Project"]=string(infos[1])
+// 	c.Infos["Version"]=string(infos[2])
+// 	c.Infos["IMEI"]=string(infos[3])
+// 	return nil
+// }

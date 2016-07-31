@@ -3,7 +3,7 @@ package connect_libnet
 import (
 	"encoding/binary"
 	"io"
-	"fmt"
+	// "fmt"
 	"bytes"
 	"errors"
 )
@@ -86,6 +86,8 @@ func PacketN(n int, byteOrder ByteOrder) Protocol {
 // Each packet has a fix length packet header to present packet length.
 type simpleProtocol struct {
 	n             int
+	unDealBuffer 	[]byte
+	unDealBufferLength 	int
 	bo            binary.ByteOrder
 	encodeHead    func([]byte)
 	decodeHead    func([]byte) int
@@ -95,6 +97,8 @@ type simpleProtocol struct {
 func newSimpleProtocol(n int, byteOrder binary.ByteOrder) *simpleProtocol {
 	protocol := &simpleProtocol{
 		n:  n,
+		unDealBuffer:make([]byte, 2048),
+		unDealBufferLength:0,
 		bo: byteOrder,
 	}
 
@@ -158,12 +162,12 @@ var SLC []byte = []byte{'J','H','U'}
 var data_spilt []byte  = []byte{'#'}
 var data_begin []byte  = []byte{'{','<'}
 var data_end []byte  = []byte{'\r','\n'}
-func checkPacket(buffer []byte,length int) (errcode int,err error) {
+func checkPacket(buffer []byte) (errcode int,length int,err error) {
 	var index,nowindex int
 
 	index = bytes.Index(buffer,SLC)
 	if (index==-1){
-		return 2,nil //没找到协议头
+		return 2,0,nil //没找到协议头
 	}else if (index > 0){
 		buffer=buffer[index:]
 	}
@@ -171,7 +175,7 @@ func checkPacket(buffer []byte,length int) (errcode int,err error) {
 
 	index = bytes.Index(buffer,data_begin)
 	if (index==-1){
-		return 1,nil //没找到数据头
+		return 1,0,nil //没找到数据头
 	}
 	nowindex=index+1
 	//数据头定位完毕，开始检查协议完整性
@@ -179,51 +183,98 @@ func checkPacket(buffer []byte,length int) (errcode int,err error) {
 	//检查协议完整性：命令编码
 	index = bytes.Index(buffer[nowindex:],data_spilt)
 	if (index==-1){
-		return 1,nil
+		return 1,0,nil
 	}
 	// var command_id string
 	// command_id = string(buffer[nowindex+1:nowindex+index])
 	nowindex=index+1
 	
 	index = bytes.Index(buffer[nowindex:],data_end)
+	// fmt.Printf("index=%d\n",index)
+	// fmt.Printf("nowindex=%d\n",nowindex)
 	if (index==-1){
-		return 1,nil //没找到数据尾
+		return 1,0,nil //没找到数据尾
 	}else{
-		return 0,nil //没找到数据尾
+		return 0,nowindex+index+len(data_end),nil //找到数据尾
+		// return 3,0,errors.New("cmd error") //协议错误
 	}
 }
 
 func (p *simpleProtocol) Read(reader io.Reader, buffer *InBuffer) error {
 	buffer.Prepare(2048)//开辟2048字节数组
-	var readedBuffer = make([]byte, 2048)
-	var readedBufferLength int = 0
+	if (p.unDealBufferLength > 0){
+		length := p.unDealBufferLength
+		// fmt.Printf("length=%d\n",length)
+		errcode, dataLength, _ := checkPacket(p.unDealBuffer[0:p.unDealBufferLength])
+		// fmt.Printf("dataLength=%d\n",dataLength)
+        switch errcode {
+            case 0:
+            	result:=make([]byte,dataLength)
+            	copy(result,p.unDealBuffer[0:dataLength])
+				buffer.Data=result[0:dataLength]
+					// fmt.Printf("buffer.Data=%s\n",buffer.Data)
+            	if (dataLength==length){
+            		p.unDealBufferLength=0
+            	}else{
+					for i := 0; i < length-dataLength; i++ {
+						p.unDealBuffer[i]=p.unDealBuffer[i+dataLength]
+					}
+					// fmt.Printf("length=%d\n",length)
+					// fmt.Printf("dataLength=%d\n",dataLength)
+            		p.unDealBufferLength=length-dataLength
+					// fmt.Printf("==p.unDealBuffer=%s\n",p.unDealBuffer[0:p.unDealBufferLength])
+					// fmt.Printf("==p.unDealBufferLength= %d\n",p.unDealBufferLength)
+            	}
+            	return nil //完整了，返回
+            case 1:
+				buffer.Prepare(2048 - p.unDealBufferLength)//开辟2048字节数组
+            case 2:
+            	p.unDealBufferLength=0
+            	break
+        }
+	}
 	for {
-		length, err := reader.Read(buffer.Data) //读到了一部分长度
+		length, err := reader.Read(buffer.Data) //读到了一部分长度c
+		// fmt.Printf("0 buffer.Data=%s\n",buffer.Data)
 		if err != nil {
 			return err
 		}
-		if (length + readedBufferLength > 2048){
+		if (length + p.unDealBufferLength > 2048){
+			// fmt.Printf("BUFFER TO LONG,length=%d",length)
 			return errors.New("BUFFER TO LONG")
 		}
-		// readedBuffer[readedBufferLength:readedBufferLength+length]=buffer.Data[0:length]
+		// p.unDealBuffer[p.unDealBufferLength:p.unDealBufferLength+length]=buffer.Data[0:length]
 
+		// fmt.Printf("0 buffer.Data=%s\n",buffer.Data)
+		// fmt.Printf("length 0 =%d\n",length)
 		for i := 0; i < length; i++ {
-			readedBuffer[i+readedBufferLength]=buffer.Data[i]
+			p.unDealBuffer[i+p.unDealBufferLength]=buffer.Data[i]
 		}
-		readedBufferLength+=length
-		fmt.Printf("readedBuffer=%s",readedBuffer[0:readedBufferLength])
-
-		errcode, err := checkPacket(readedBuffer,length) //checkPacket方法判断数据包是否完整
-		fmt.Printf("errcode=%d",errcode)
-		fmt.Printf("length=%d",length)
-		fmt.Printf("\n\n")
+		p.unDealBufferLength+=length
+		// fmt.Printf("p.unDealBuffer=%s\n",p.unDealBuffer[0:p.unDealBufferLength])
+		// fmt.Printf("length 1 =%d\n",length)
+		errcode, dataLength, err := checkPacket(p.unDealBuffer) //checkPacket方法判断数据包是否完整
+		// fmt.Printf("errcode=%d\n",errcode)
+		// fmt.Printf("dataLength=%d\n",dataLength)
+		// fmt.Printf("p.unDealBufferLength= %d\n",p.unDealBufferLength)
+		// fmt.Printf("\n\n")
         switch errcode {
             case 0:
-            	buffer.Data = readedBuffer[0:length]
-            	readedBufferLength=0
+            	result:=make([]byte,dataLength)
+            	copy(result,p.unDealBuffer[0:dataLength])
+				buffer.Data=result[0:dataLength]
+				// fmt.Printf("1 buffer.Data=%s\n",buffer.Data)
+				for i := 0; i < p.unDealBufferLength-dataLength; i++ {
+					p.unDealBuffer[i]=p.unDealBuffer[i+dataLength]
+				}
+        		p.unDealBufferLength-=dataLength
+				// p.unDealBuffer=p.unDealBuffer[dataLength:length]
+				// fmt.Printf("2 buffer.Data=%s\n",buffer.Data)
+				// fmt.Printf("p.unDealBuffer=%s\n",p.unDealBuffer[0:p.unDealBufferLength])
+				// fmt.Printf("p.unDealBufferLength= %d\n",p.unDealBufferLength)
             	return nil //完整了，返回
             case 2:
-            	readedBufferLength=0
+            	p.unDealBufferLength=0
             	break
             case 3:
             	return err //协议出错了

@@ -86,6 +86,26 @@ func (self *ProtoProc) procPing(cmd protocol.Cmd, session *libnet.Session) error
 	return nil
 }
 
+func (self *ProtoProc) procGoOffLine(cmd protocol.Cmd, session *libnet.Session) error {
+	//log.Info("procPing")
+	//cid := session.State.(*base.SessionState).ClientID
+		//self.msgServer.sessions[cid].State.(*base.SessionState).Alive = true
+	if session.State != nil {
+        // fmt.Printf("session.State != nil")
+		self.msgServer.scanSessionMutex.Lock()
+		defer self.msgServer.scanSessionMutex.Unlock()
+		resp := protocol.NewCmdSimple(protocol.PING_CMD_ACK)
+		// log.Info(resp)
+        // fmt.Printf("resp=",resp)
+		err := session.Send(libnet.Json(resp))
+		if err != nil {
+			log.Error(err.Error())
+			return err
+		}
+		session.State.(*base.SessionState).Alive = true
+	}
+	return nil
+}
 /*
    发送给消息接受者的消息
    MsgServer -> device/client

@@ -18,13 +18,13 @@ package main
 import (
 	"flag"
 	"fmt"
-	"time"
+	// "time"
 
-	"github.com/oikomi/FishChatServer/connect_base"
-	// "github.com/oikomi/FishChatServer/libnet"
+	// "github.com/oikomi/FishChatServer/connect_base"
+	"github.com/oikomi/FishChatServer/protocol"
 	"github.com/oikomi/FishChatServer/connect_libnet"
 	"github.com/oikomi/FishChatServer/log"
-	"github.com/oikomi/FishChatServer/storage/redis_store"
+	// "github.com/oikomi/FishChatServer/storage/redis_store"
 )
 
 /*
@@ -61,6 +61,7 @@ var InputConfFile = flag.String("conf_file", "connect_server.json", "input conf 
 
 func handleSession(ms *ConnectServer, session *connect_libnet.Session) {
 	session.Process(func(msg *connect_libnet.InBuffer) error {
+					fmt.Printf("msg.Data=%s\n",msg.Data)
 		err := ms.parseProtocol(msg.Data, session)
 		if err != nil {
 			log.Error(err.Error())
@@ -81,17 +82,18 @@ func main() {
 		return
 	}
 
-	rs := redis_store.NewRedisStore(&redis_store.RedisStoreOptions{
-		Network:        "tcp",
-		Address:        cfg.Redis.Addr + cfg.Redis.Port,
-		ConnectTimeout: time.Duration(cfg.Redis.ConnectTimeout) * time.Millisecond,
-		ReadTimeout:    time.Duration(cfg.Redis.ReadTimeout) * time.Millisecond,
-		WriteTimeout:   time.Duration(cfg.Redis.WriteTimeout) * time.Millisecond,
-		Database:       1,
-		KeyPrefix:      connect_base.COMM_PREFIX,
-	})
+	// rs := redis_store.NewRedisStore(&redis_store.RedisStoreOptions{
+	// 	Network:        "tcp",
+	// 	Address:        cfg.Redis.Addr + cfg.Redis.Port,
+	// 	ConnectTimeout: time.Duration(cfg.Redis.ConnectTimeout) * time.Millisecond,
+	// 	ReadTimeout:    time.Duration(cfg.Redis.ReadTimeout) * time.Millisecond,
+	// 	WriteTimeout:   time.Duration(cfg.Redis.WriteTimeout) * time.Millisecond,
+	// 	Database:       1,
+	// 	KeyPrefix:      connect_base.COMM_PREFIX,
+	// })
 
-	ms := NewMsgServer(cfg, rs)
+	// ms := NewMsgServer(cfg, rs)
+	ms := NewMsgServer(cfg)
 
 	ms.server, err = connect_libnet.Listen(cfg.TransportProtocols, cfg.Listen)  //监听服务端口等待客户端连接
 	if err != nil {
@@ -103,12 +105,28 @@ func main() {
 
 	go ms.scanDeadSession()	//清理无用session
 	
-	go ms.scanDeadClient()	//清理无用scanDeadClient
+	go ms.scanDeadClient()	//清理无用消息服务器
 
 	// go ms.sendMonitorData()
 
 	ms.server.Serve(func(session *connect_libnet.Session) {
 		log.Info("a new client ", session.Conn().RemoteAddr().String(), " | come in")
+		session.AddCloseCallback(ms, func() {
+			//客户端下线，通知消息服务器
+			if (session.IMEI != ""){
+				ms.scanSessionMutex.Lock()
+				cmd := protocol.NewCmdSimple(protocol.ACTION_GO_OFFLINE_CMD)
+				cmd.AddArg(session.IMEI)
+				pp := NewProtoProc(ms)
+				err = pp.procCheckMsgServer(session)
+				if err != nil{
+					ms.scanSessionMutex.Unlock()
+					return 
+				}
+				err = pp.procTransferMsgServer(cmd, session)
+				ms.scanSessionMutex.Unlock()
+			}
+		})
 		go handleSession(ms, session)
 	})
 }

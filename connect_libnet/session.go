@@ -58,6 +58,7 @@ type Session struct {
 	closeCallbacks  *list.List
 
 	// Put your session state here.
+	IMEI string
 	State interface{}
 }
 
@@ -91,6 +92,7 @@ func NewSession(id uint64, conn net.Conn, protocol Protocol, sendChanSize int, r
 		asyncSendBufferChan: make(chan asyncBuffer, sendChanSize),
 		closeChan:           make(chan int),
 		closeCallbacks:      list.New(),
+		IMEI:				 "",
 	}
 	session.protocol = protocol.New(session)
 
