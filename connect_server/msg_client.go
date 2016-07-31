@@ -3,8 +3,9 @@ package main
 
 import (
     "encoding/json"
-    "fmt"
+    _ "fmt"
     "time"
+    "errors"
 
     "github.com/oikomi/FishChatServer/libnet"
     "github.com/oikomi/FishChatServer/log"
@@ -14,30 +15,26 @@ import (
     心跳检测消息服务器是否存活
 */
 func (self *ConnectServer) scanDeadClient() {
-    log.Info("scanDeadClient")
-    timer := time.NewTicker(5 * time.Second)
+    timer := time.NewTicker(60 * time.Second)
     for {
         select {
         case <-timer.C:
-            log.Info("scanDeadClient timeout")
+            log.Info("begin scanDeadClient")
             go func() {
-                for _, ms := range self.cfg.MsgServerList {
+                for ms, msgServerClient := range self.msgServerClientMap {
                     self.msgServerClientMutex.Lock()
-                    fmt.Printf(ms)
-                    if self.msgServerClientMap[ms].Alive == false {
+                    if msgServerClient.Alive == false || msgServerClient.Valid == false {
                         //心跳没有收到回复，链接作废
-                        fmt.Printf("Close:%s",ms)
-                        self.msgServerClientMap[ms].Session.Close()
-                        // delete(self.msgServerClientMap, ms)
+                        log.Warningf("CloseDeadClient [%s],Alive=%t,Valid=%t.",ms,msgServerClient.Alive,msgServerClient.Valid)
+                        msgServerClient.Session.Close()
                     } else {
                         //发送心跳，等待回复
-                        self.msgServerClientMap[ms].Alive = false
-                        cmd := protocol.NewCmdSimple(protocol.SUBSCRIBE_CHANNEL_CMD)
-                        cmd.AddArg(protocol.SYSCTRL_CONNECT_SERVER)
+                        msgServerClient.Alive = false
+                        cmd := protocol.NewCmdSimple(protocol.SEND_PING_CMD)
                         cmd.AddArg(self.cfg.UUID)
-                        err := self.msgServerClientMap[ms].Session.Send(libnet.Json(cmd))
+                        err := msgServerClient.Session.Send(libnet.Json(cmd))
                         if err != nil {
-                            self.msgServerClientMap[ms].Session.Close()
+                            msgServerClient.Session.Close()
                         }
                     }
                     self.msgServerClientMutex.Unlock()
@@ -57,15 +54,16 @@ func (self *ConnectServer)subscribeChannels() error {
     defer self.msgServerClientMutex.Unlock()
     for _, ms := range self.cfg.MsgServerList {
         if self.msgServerClientMap[ms] != nil  {
-            log.Info("self.msgServerClientMap[ms] != nil")
+            //已经创建过链接并且链接正常
             continue
         }
-        msgServerClient, err := self.connectMsgServer(ms)
+        msgServerClient, err := self.connectMsgServer(ms) //发起连接
         if err != nil {
             log.Error(err.Error())
             go self.subscribeChannels()
             continue
         }
+        //连接建立成功，开始发送通道订阅
         cmd := protocol.NewCmdSimple(protocol.SUBSCRIBE_CHANNEL_CMD)
         cmd.AddArg(protocol.SYSCTRL_CONNECT_SERVER)
         cmd.AddArg(self.cfg.UUID)
@@ -76,12 +74,15 @@ func (self *ConnectServer)subscribeChannels() error {
             go self.subscribeChannels()
             continue
         }
+        //通道订阅发送成功
         self.msgServerClientMap[ms]=new(msgServerClientState)
         self.msgServerClientMap[ms].Alive = true
+        self.msgServerClientMap[ms].Valid = false
+        self.msgServerClientMap[ms].ClientSessionNum = 0
         self.msgServerClientMap[ms].Session = msgServerClient
+        //开始处理 消息服务器-> 接入服务器 的数据
         go func(ms string) {
             err := self.handleMsgServerClient(msgServerClient)
-            log.Info(" go msgServerClientMap[%s],err=%s",ms,err)
             if err !=nil {
                 delete(self.msgServerClientMap, ms)
             }
@@ -98,18 +99,27 @@ func (self *ConnectServer)subscribeChannels() error {
 
 func (self *ConnectServer)handleMsgServerClient(msc *libnet.Session) error {
     err := msc.Process(func(msg *libnet.InBuffer) error {
-        //log.Info("msg_server", msc.Conn().RemoteAddr().String()," say: ", string(msg.Data))
-        var c protocol.CmdMonitor
-        
+        var c protocol.CmdSimple
+        ms:=msc.Conn().RemoteAddr().String()
+        if self.msgServerClientMap[ms] == nil  {
+            log.Error(ms+" not exist")
+            return errors.New(ms+" not exist")
+        }
         err := json.Unmarshal(msg.Data, &c)
         if err != nil {
             log.Error("error:", err)
             return err
         }
 
+        log.Infof("c.GetCmdName()=%s\n\n",c.GetCmdName())
+        switch c.GetCmdName() {
+            case protocol.SUBSCRIBE_CHANNEL_CMD_ACK:
+                self.msgServerClientMap[ms].Valid = true
+            case protocol.PING_CMD_ACK:
+                self.msgServerClientMap[ms].Alive = true
+        }
         return nil
     })
-    fmt.Printf("handleMsgServerClient,err=%s\n\n",err)
     return err
 }
 

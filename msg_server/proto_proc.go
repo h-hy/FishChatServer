@@ -18,6 +18,7 @@ package main
 import (
 	"flag"
 	"strconv"
+	_ "fmt"
 
 	"github.com/oikomi/FishChatServer/base"
 	"github.com/oikomi/FishChatServer/common"
@@ -49,22 +50,37 @@ func (self *ProtoProc) procSubscribeChannel(cmd protocol.Cmd, session *libnet.Se
 	cUUID := cmd.GetArgs()[1]
 	log.Info(channelName)
 	if self.msgServer.channels[channelName] != nil {
+		if (channelName==protocol.SYSCTRL_CONNECT_SERVER){
+			self.msgServer.sessions[cUUID] = session
+			self.msgServer.sessions[cUUID].State = base.NewSessionState(true, cUUID, "connect_server")
+			resp := protocol.NewCmdSimple(protocol.SUBSCRIBE_CHANNEL_CMD_ACK)
+			_ = session.Send(libnet.Json(resp))
+		}
 		self.msgServer.channels[channelName].Channel.Join(session, nil)
 		self.msgServer.channels[channelName].ClientIDlist = append(self.msgServer.channels[channelName].ClientIDlist, cUUID)
 	} else {
 		log.Warning(channelName + " is not exist")
 	}
 
-	log.Info(self.msgServer.channels)
+	// log.Info(self.msgServer.channels)
 }
 
 func (self *ProtoProc) procPing(cmd protocol.Cmd, session *libnet.Session) error {
 	//log.Info("procPing")
 	//cid := session.State.(*base.SessionState).ClientID
+		//self.msgServer.sessions[cid].State.(*base.SessionState).Alive = true
 	if session.State != nil {
+        // fmt.Printf("session.State != nil")
 		self.msgServer.scanSessionMutex.Lock()
 		defer self.msgServer.scanSessionMutex.Unlock()
-		//self.msgServer.sessions[cid].State.(*base.SessionState).Alive = true
+		resp := protocol.NewCmdSimple(protocol.PING_CMD_ACK)
+		// log.Info(resp)
+        // fmt.Printf("resp=",resp)
+		err := session.Send(libnet.Json(resp))
+		if err != nil {
+			log.Error(err.Error())
+			return err
+		}
 		session.State.(*base.SessionState).Alive = true
 	}
 	return nil

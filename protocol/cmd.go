@@ -36,6 +36,7 @@ const (
 const (
 	//SEND_PING
 	SEND_PING_CMD = "PING"
+	PING_CMD_ACK = "PING_ACK"
 
 	REQ_LOGIN_CMD = "REQ_LOGIN"
 	RSP_LOGIN_CMD = "RSP_LOGIN"
@@ -279,6 +280,7 @@ const (
 	SEND_CLIENT_ID_FOR_TOPIC_CMD = "SEND_CLIENT_ID_FOR_TOPIC"
 	//SUBSCRIBE_CHANNEL channelName
 	SUBSCRIBE_CHANNEL_CMD = "SUBSCRIBE_CHANNEL"
+	SUBSCRIBE_CHANNEL_CMD_ACK = "SUBSCRIBE_CHANNEL_ACK"
 	//SEND_MESSAGE_P2P send2ID send2msg
 	SEND_MESSAGE_P2P_CMD = "SEND_MESSAGE_P2P"
 	//RESP_MESSAGE_P2P  msg fromID uuid
@@ -318,8 +320,8 @@ type Cmd interface {
 
 type CmdSimple struct {
 	CmdName string
-	IMEI string
 	Args    []string
+	Infos   map[string]string
 }
 
 func NewCmdSimple(cmdName string) *CmdSimple {
@@ -339,6 +341,9 @@ func (self *CmdSimple) ChangeCmdName(newName string) {
 
 func (self *CmdSimple) GetArgs() []string {
 	return self.Args
+}
+func (self *CmdSimple) GetInfos() map[string]string {
+	return self.Infos
 }
 
 func (self *CmdSimple) AddArg(arg string) {

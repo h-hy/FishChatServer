@@ -35,15 +35,15 @@ const char* build_time(void) {
 	return psz_build_time;
 }
 */
-import "C"
+// import "C"
 
-var (
-	buildTime = C.GoString(C.build_time())
-)
+// var (
+// 	buildTime = C.GoString(C.build_time())
+// )
 
-func BuildTime() string {
-	return buildTime
-}
+// func BuildTime() string {
+// 	return buildTime
+// }
 
 const VERSION string = "0.10"
 
@@ -71,7 +71,7 @@ func handleSession(ms *MsgServer, session *libnet.Session) {
 
 func main() {
 	version()
-	fmt.Printf("built on %s\n", BuildTime())
+	// fmt.Printf("built on %s\n", BuildTime())
 	flag.Parse()
 	cfg := NewMsgServerConfig(*InputConfFile)
 	err := cfg.LoadConfig()

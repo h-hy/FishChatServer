@@ -20,6 +20,7 @@ import (
 	"flag"
 	"sync"
 	"time"
+	"fmt"
 
 	"github.com/oikomi/FishChatServer/base"
 	"github.com/oikomi/FishChatServer/common"
@@ -342,6 +343,9 @@ func (self *MsgServer) parseProtocol(cmd []byte, session *libnet.Session) error 
 		self.scanSessionMutex.Lock()
 		session.State.(*base.SessionState).Alive = true
 		self.scanSessionMutex.Unlock()
+	}else{
+    fmt.Printf("session.State = nil\n")
+
 	}
 	err := json.Unmarshal(cmd, &c)
 	if err != nil {
@@ -356,6 +360,7 @@ func (self *MsgServer) parseProtocol(cmd []byte, session *libnet.Session) error 
 
 	log.Infof("[%s]->[%s]", session.Conn().RemoteAddr().String(), self.cfg.LocalIP)
 	log.Info(c)
+    fmt.Printf("c.GetCmdName()=%s\n\n",c.GetCmdName())
 	switch c.GetCmdName() {
 	case protocol.SEND_PING_CMD:
 		err = pp.procPing(&c, session)

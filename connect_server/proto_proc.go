@@ -17,13 +17,16 @@ package main
 
 import (
 	"flag"
+	"errors"
+	_ "fmt"
 	// "strconv"
 
-	// "github.com/oikomi/FishChatServer/connect_base"
+	"github.com/oikomi/FishChatServer/connect_base"
 	// "github.com/oikomi/FishChatServer/common"
-	// "github.com/oikomi/FishChatServer/connect_libnet"
-	// "github.com/oikomi/FishChatServer/log"
-	// "github.com/oikomi/FishChatServer/protocol"
+	"github.com/oikomi/FishChatServer/connect_libnet"
+	"github.com/oikomi/FishChatServer/libnet"
+	"github.com/oikomi/FishChatServer/log"
+	"github.com/oikomi/FishChatServer/protocol"
 	// "github.com/oikomi/FishChatServer/storage/mongo_store"
 	// "github.com/oikomi/FishChatServer/storage/redis_store"
 )
@@ -58,3 +61,45 @@ func NewProtoProc(connectServer *ConnectServer) *ProtoProc {
 // 	log.Info(self.connectServer.channels)
 // }
 
+func (self *ProtoProc) procGetMinLoadMsgServer() string {
+	var minload uint64
+	var minloadserver string
+	var msgServer string
+
+	minload = 0xFFFFFFFFFFFFFFFF
+
+	for str, msgServerClient := range self.connectServer.msgServerClientMap {
+		if minload > msgServerClient.ClientSessionNum && msgServerClient.Valid == true {
+			minload = msgServerClient.ClientSessionNum
+			minloadserver = str
+		}
+	}
+	msgServer = minloadserver
+	return msgServer
+}
+
+func (self *ProtoProc) procCheckMsgServer(session *connect_libnet.Session) error {
+	if (	session.State.(*connect_base.SessionState).MsgServer=="" || 
+			self.connectServer.msgServerClientMap[session.State.(*connect_base.SessionState).MsgServer] ==nil || 
+			self.connectServer.msgServerClientMap[session.State.(*connect_base.SessionState).MsgServer].Valid != true){
+		session.State.(*connect_base.SessionState).MsgServer=self.procGetMinLoadMsgServer()
+	}
+
+	if (	session.State.(*connect_base.SessionState).MsgServer=="" || 
+			self.connectServer.msgServerClientMap[session.State.(*connect_base.SessionState).MsgServer] ==nil || 
+			self.connectServer.msgServerClientMap[session.State.(*connect_base.SessionState).MsgServer].Valid != true){
+		return errors.New("No MsgServer Valid.")
+	}
+	return nil
+}
+
+func (self *ProtoProc) procTransferMsgServer(cmd protocol.Cmd,session *connect_libnet.Session) error {
+	log.Info("procTransferMsgServer")
+	log.Info(cmd)
+	err := self.connectServer.msgServerClientMap[session.State.(*connect_base.SessionState).MsgServer].Session.Send(libnet.Json(cmd))
+	if err != nil {
+		log.Error(err.Error())
+		return err
+	}
+	return nil
+}

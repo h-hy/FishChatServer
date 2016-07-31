@@ -48,14 +48,15 @@ func NewChannelState(channelName string, channel *connect_libnet.Channel) *Chann
 }
 
 type SessionState struct {
-	ClientID   string
+	IMEI   string
 	Alive      bool
 	ClientType string
+	MsgServer string
 }
 
-func NewSessionState(alive bool, cid string, clienttype string) *SessionState {
+func NewSessionState(alive bool, IMEI string, clienttype string) *SessionState {
 	return &SessionState{
-		ClientID:   cid,
+		IMEI:   IMEI,
 		Alive:      alive,
 		ClientType: clienttype,
 	}

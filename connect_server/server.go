@@ -43,6 +43,8 @@ func init() {
 type msgServerClientState struct {
 	Session   *libnet.Session
 	Alive      bool
+	Valid      bool
+	ClientSessionNum	uint64
 }
 
 type ConnectServer struct {
@@ -142,14 +144,18 @@ func (self *ConnectServer) parseProtocol(cmd []byte, session *connect_libnet.Ses
 	if (len(infos) != 4 ){
 		return errors.New("cmd ERROR")
 	}
-	c.IMEI=string(infos[3])
-	//IMEI提取完毕
+	c.Infos=make(map[string]string)
+	c.Infos["ID"]=string(infos[0])
+	c.Infos["Project"]=string(infos[1])
+	c.Infos["Version"]=string(infos[2])
+	c.Infos["IMEI"]=string(infos[3])
+	IMEI := string(infos[3])
+	//包头信息提取完毕
 	last_index = bytes.Index(cmd,data_end)
 	if (index==-1){
 		return errors.New("cmd ERROR")
 	}
 	//数据尾定位完毕
-
 
 	index = bytes.Index(cmd[nowindex:],data_spilt)
 	if (index==-1){
@@ -173,7 +179,7 @@ func (self *ConnectServer) parseProtocol(cmd []byte, session *connect_libnet.Ses
 	}
 	//完整提取完毕
 
-	// pp := NewProtoProc(self)
+	pp := NewProtoProc(self)
 
 	self.readMutex.Lock()
 	defer self.readMutex.Unlock()
@@ -181,12 +187,26 @@ func (self *ConnectServer) parseProtocol(cmd []byte, session *connect_libnet.Ses
 	log.Infof("[%s]->[%s]", session.Conn().RemoteAddr().String(), self.cfg.LocalIP)
 	log.Info(c)
 	
-	
+	if session.State == nil {
+		self.scanSessionMutex.Lock()
+		self.sessions[IMEI] = session
+		self.sessions[IMEI].State = connect_base.NewSessionState(true, IMEI, "Device")
+		self.scanSessionMutex.Unlock()
+	}
+
+	err = pp.procCheckMsgServer(session)
+	if err != nil{
+		return err
+	}
+
+	err = pp.procTransferMsgServer(&c, session)
+	if err != nil{
+		return err
+	}
 	// switch c.GetCmdName() {
 
 	// }
-
-	return err
+	return nil
 }
 
 
