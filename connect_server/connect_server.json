@@ -1,0 +1,31 @@
+{
+	"LocalIP"                  : "127.0.0.1:6800",
+	"TransportProtocols"       : "tcp",
+	"Listen"                   : "0.0.0.0:6800",
+	"LogFile"                  : "connect_server.log",
+	"ScanDeadSessionTimeout"   : 50,
+	"Expire"                   : 100,
+
+	"MonitorBeatTime"          : 5,
+	
+	"SessionManagerServerList" : [
+		"127.0.0.1:18000"
+	],
+	
+	"Redis"                    : { 
+		"Addr" : "127.0.0.1", 
+		"Port" : ":6379",
+		"ConnectTimeout" : 2000,
+		"ReadTimeout" : 1000,
+		"WriteTimeout" : 1000
+	},
+	
+	"Mongo"              : { 
+			"Addr"      : "127.0.0.1", 
+			"Port"      : ":27017",
+			"User"      : "",
+			"Password"  : ""
+
+	}
+	
+}

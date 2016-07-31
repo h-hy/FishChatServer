@@ -318,6 +318,7 @@ type Cmd interface {
 
 type CmdSimple struct {
 	CmdName string
+	IMEI string
 	Args    []string
 }
 
