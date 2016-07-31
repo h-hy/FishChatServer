@@ -45,6 +45,8 @@ type ConnectServerConfig struct {
 		User           string
 		Password       string
 	} 
+	MsgServerList      []string
+	UUID               string
 }
 
 func NewConnectServerConfig(configfile string) *ConnectServerConfig {

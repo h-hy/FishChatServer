@@ -99,9 +99,11 @@ func main() {
 	}
 	log.Info("connect_server running at  ", ms.server.Listener().Addr().String())
 
-	ms.createChannels() //监听tcp等待消息服务器接入
+	ms.subscribeChannels() //连接到消息服务器
 
 	go ms.scanDeadSession()	//清理无用session
+	
+	go ms.scanDeadClient()	//清理无用scanDeadClient
 
 	// go ms.sendMonitorData()
 
@@ -110,3 +112,5 @@ func main() {
 		go handleSession(ms, session)
 	})
 }
+
+

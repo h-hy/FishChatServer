@@ -20,7 +20,12 @@ const (
 	SYSCTRL_TOPIC_STATUS  = "/sysctrl/topic-status"
 	SYSCTRL_TOPIC_SYNC    = "/sysctrl/topic-sync"
 	SYSCTRL_SEND          = "/sysctrl/send"
-	SYSCTRL_MONITOR       = "/sysctrl/monitor"
+    SYSCTRL_MONITOR       = "/sysctrl/monitor"
+	SYSCTRL_CONNECT_SERVER       = "/sysctrl/connect-servevr"
+)
+
+const (
+    SYSCTRL_MSG_SERVER = "/sysctrl/msg-server"
 )
 
 const (

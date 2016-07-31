@@ -27,6 +27,7 @@ import (
 	"github.com/oikomi/FishChatServer/connect_base"
 	// "github.com/oikomi/FishChatServer/common"
 	"github.com/oikomi/FishChatServer/connect_libnet"
+	"github.com/oikomi/FishChatServer/libnet"
 	"github.com/oikomi/FishChatServer/log"
 	"github.com/oikomi/FishChatServer/protocol"
 	"github.com/oikomi/FishChatServer/storage/mongo_store"
@@ -36,6 +37,12 @@ import (
 func init() {
 	flag.Set("alsologtostderr", "true")
 	flag.Set("log_dir", "false")
+}
+
+
+type msgServerClientState struct {
+	Session   *libnet.Session
+	Alive      bool
 }
 
 type ConnectServer struct {
@@ -51,11 +58,15 @@ type ConnectServer struct {
 	mongoStore       *mongo_store.MongoStore
 	scanSessionMutex sync.Mutex
 	readMutex        sync.Mutex // multi client session may ask for REDIS at the same time
+	msgServerClientMap  map[string]*msgServerClientState
+	msgServerClientMutex sync.Mutex
 }
+
 
 func NewMsgServer(cfg *ConnectServerConfig, rs *redis_store.RedisStore) *ConnectServer {
 	return &ConnectServer{
-		cfg:             cfg,
+		cfg:             cfg,		//配置
+		msgServerClientMap : make(map[string]*msgServerClientState),	//已经连接的消息服务器表
 		sessions:        make(connect_base.SessionMap),
 		channels:        make(connect_base.ChannelMap),
 		topics:          make(protocol.TopicMap),
@@ -66,41 +77,6 @@ func NewMsgServer(cfg *ConnectServerConfig, rs *redis_store.RedisStore) *Connect
 		p2pStatusCache:  redis_store.NewP2pStatusCache(rs),
 		mongoStore:      mongo_store.NewMongoStore(cfg.Mongo.Addr, cfg.Mongo.Port, cfg.Mongo.User, cfg.Mongo.Password),
 	}
-}
-
-func (self *ConnectServer) createChannels() {
-	log.Info("createChannels")
-	for _, c := range connect_base.ChannleList {
-		channel := connect_libnet.NewChannel(self.server.Protocol())
-		self.channels[c] = connect_base.NewChannelState(c, channel)
-	}
-}
-
-func (self *ConnectServer) sendMonitorData() error {
-	// log.Info("sendMonitorData")
-	// resp := protocol.NewCmdMonitor()
-
-	// // resp.SessionNum = (uint64)(len(self.sessions))
-
-	// // log.Info(resp)
-
-	// mb := NewMonitorBeat("monitor", self.cfg.MonitorBeatTime, 40, 10)
-
-	// if self.channels[protocol.SYSCTRL_MONITOR] != nil {
-	// 	for {
-	// 		resp.SessionNum = (uint64)(len(self.sessions))
-
-	// 		//log.Info(resp)
-	// 		mb.Beat(self.channels[protocol.SYSCTRL_MONITOR].Channel, resp)
-	// 	}
-	// 	// _, err := self.channels[protocol.SYSCTRL_MONITOR].Channel.Broadcast(connect_libnet.Json(resp))
-	// 	// if err != nil {
-	// 	// 	glog.Error(err.Error())
-	// 	// 	return err
-	// 	// }
-	// }
-
-	return nil
 }
 
 func (self *ConnectServer) scanDeadSession() {
@@ -212,3 +188,5 @@ func (self *ConnectServer) parseProtocol(cmd []byte, session *connect_libnet.Ses
 
 	return err
 }
+
+
