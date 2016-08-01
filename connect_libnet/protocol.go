@@ -144,14 +144,14 @@ func (p *simpleProtocol) New(v interface{}) ProtocolState {
 
 func (p *simpleProtocol) PrepareOutBuffer(buffer *OutBuffer, size int) {
 	buffer.Prepare(size)
-	buffer.Data = buffer.Data[:p.n]
+	// buffer.Data = buffer.Data[:p.n]
 }
 
 func (p *simpleProtocol) Write(writer io.Writer, packet *OutBuffer) error {
 	if p.MaxPacketSize > 0 && len(packet.Data) > p.MaxPacketSize {
 		return PacketTooLargeError
 	}
-	p.encodeHead(packet.Data)
+	// p.encodeHead(packet.Data)
 	if _, err := writer.Write(packet.Data); err != nil {
 		return err
 	}
@@ -235,7 +235,7 @@ func (p *simpleProtocol) Read(reader io.Reader, buffer *InBuffer) error {
 	}
 	for {
 		length, err := reader.Read(buffer.Data) //读到了一部分长度c
-		// fmt.Printf("0 buffer.Data=%s\n",buffer.Data)
+		// fmt.Printf("reader.Read\n")
 		if err != nil {
 			return err
 		}

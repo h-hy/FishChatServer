@@ -20,7 +20,7 @@ import (
 	"flag"
 	"sync"
 	"time"
-	"fmt"
+	// "fmt"
 
 	"github.com/oikomi/FishChatServer/base"
 	"github.com/oikomi/FishChatServer/common"
@@ -254,7 +254,7 @@ func (self *MsgServer) procJoinTopic(member *mongo_store.Member, topicName strin
 	}
 	return nil
 }
-func (self *MsgServer) procQuitTopic(clientID string, topicName string) error {
+func (self *MsgServer) procQuitTopic(IMEI string, topicName string) error {
 	log.Info("procQuitTopic")
 	var err error
 	var topicCacheData *redis_store.TopicCacheData
@@ -268,43 +268,43 @@ func (self *MsgServer) procQuitTopic(clientID string, topicName string) error {
 		return common.TOPIC_NOT_EXIST
 	}
 
-	if !topicCacheData.MemberExist(clientID) {
-		log.Warningf("member %s is not in topic %s", clientID, topicName)
+	if !topicCacheData.MemberExist(IMEI) {
+		log.Warningf("member %s is not in topic %s", IMEI, topicName)
 		return common.NOT_MEMBER
 	}
 	// update topic cache and store
-	topicCacheData.RemoveMember(clientID)
+	topicCacheData.RemoveMember(IMEI)
 	err = self.topicCache.Set(topicCacheData)
 	if err != nil {
 		log.Error(err.Error())
 		return err
 	}
-	log.Infof("member %s removed from topic CACHE %s", clientID, topicName)
+	log.Infof("member %s removed from topic CACHE %s", IMEI, topicName)
 
 	err = self.mongoStore.Set(topicCacheData.TopicStoreData)
 	if err != nil {
 		log.Error(err.Error())
 		return err
 	}
-	log.Infof("member %s removed from topic STORE %s", clientID, topicName)
+	log.Infof("member %s removed from topic STORE %s", IMEI, topicName)
 
 	// update session cache and store
-	sessionCacheData, err = self.sessionCache.Get(clientID)
+	sessionCacheData, err = self.sessionCache.Get(IMEI)
 	if sessionCacheData != nil {
-		log.Infof("remove topic %s from Client CACHE %s", topicName, clientID)
+		log.Infof("remove topic %s from Client CACHE %s", topicName, IMEI)
 		sessionCacheData.RemoveTopic(topicName)
 		err = self.sessionCache.Set(sessionCacheData)
 		if err != nil {
 			log.Error(err.Error())
 			return err
 		}
-		log.Infof("topic %s removed from Client CACHE %s", topicName, clientID)
+		log.Infof("topic %s removed from Client CACHE %s", topicName, IMEI)
 		err = self.mongoStore.Set(sessionCacheData.SessionStoreData)
 		if err != nil {
 			log.Error(err.Error())
 			return err
 		}
-		log.Infof("topic %s removed from Client STORE %s", topicName, clientID)
+		log.Infof("topic %s removed from Client STORE %s", topicName, IMEI)
 		if sessionCacheData.Alive {
 			// update AliveMemberNumMap[server]
 			if v, ok := topicCacheData.AliveMemberNumMap[sessionCacheData.MsgServerAddr]; ok {
@@ -317,18 +317,18 @@ func (self *MsgServer) procQuitTopic(clientID string, topicName string) error {
 			}
 		}
 	} else {
-		sessionStoreData, err = self.mongoStore.GetSessionFromCid(clientID)
+		sessionStoreData, err = self.mongoStore.GetSessionFromIMEI(IMEI)
 		if sessionStoreData == nil {
-			log.Warningf("ID %s not registered in STORE", clientID)
+			log.Warningf("ID %s not registered in STORE", IMEI)
 		} else {
-			log.Infof("remove topic %s from Client STORE %s", topicName, clientID)
+			log.Infof("remove topic %s from Client STORE %s", topicName, IMEI)
 			sessionStoreData.RemoveTopic(topicName)
 			err = self.mongoStore.Set(sessionStoreData)
 			if err != nil {
 				log.Error(err.Error())
 				return err
 			}
-			log.Infof("topic %s removed from Client STORE %s", topicName, clientID)
+			log.Infof("topic %s removed from Client STORE %s", topicName, IMEI)
 
 		}
 	}
@@ -337,146 +337,184 @@ func (self *MsgServer) procQuitTopic(clientID string, topicName string) error {
 
 func (self *MsgServer) parseProtocol(cmd []byte, session *libnet.Session) error {
 	var c protocol.CmdSimple
-
 	// receive msg, that means client alive
 	if session.State != nil {
 		self.scanSessionMutex.Lock()
 		session.State.(*base.SessionState).Alive = true
 		self.scanSessionMutex.Unlock()
-	}else{
-    fmt.Printf("session.State = nil\n")
-
 	}
 	err := json.Unmarshal(cmd, &c)
 	if err != nil {
 		log.Error("error:", err)
 		return err
 	}
-
 	pp := NewProtoProc(self)
 
 	self.readMutex.Lock()
 	defer self.readMutex.Unlock()
 
-	log.Infof("[%s]->[%s]", session.Conn().RemoteAddr().String(), self.cfg.LocalIP)
 	log.Info(c)
-    fmt.Printf("c.GetCmdName()=%s\n\n",c.GetCmdName())
+
 	switch c.GetCmdName() {
-	case protocol.SEND_PING_CMD:
-		err = pp.procPing(&c, session)
-		if err != nil {
-			log.Error("error:", err)
-			return err
-		}
-	case protocol.SUBSCRIBE_CHANNEL_CMD:
-		pp.procSubscribeChannel(&c, session)
-	case protocol.ACTION_GO_OFFLINE_CMD:
-		pp.procGoOffLine(&c, session)
+		case protocol.SEND_PING_CMD:		//接入服务器心跳请求
+			err = pp.procPing(&c, session)
+			if err != nil {
+				log.Error("error:", err)
+				return err
+			}
+		case protocol.SUBSCRIBE_CHANNEL_CMD: 	//订阅通道
+			err = pp.procSubscribeChannel(&c, session)
+			if err != nil {
+				log.Error("error:", err)
+				return err
+			}
 
+		case protocol.ACTION_GO_OFFLINE_CMD:	//终端下线通知
+			err = pp.procGoOffLine(&c, session)
+			if err != nil {
+				log.Error("error:", err)
+				return err
+			}
 
-	case protocol.REQ_LOGIN_CMD:
-		err = pp.procLogin(&c, session)
-		if err != nil {
-			log.Error("error:", err)
-			return err
-		}
+		case protocol.ACTION_SELECT_MSG_SERVER_CMD: //终端切换消息服务器通知
+			err = pp.procSelectMsgServer(&c, session)
+			if err != nil {
+				log.Error("error:", err)
+				return err
+			}
 
-	case protocol.REQ_LOGOUT_CMD:
-		err = pp.procLogout(&c, session)
-		if err != nil {
-			log.Error("error:", err)
-			return err
-		}
+		case "U"+protocol.DEIVCE_HEARTBEAT_CMD:			//心跳包（上行）
+			err = pp.prochHeartbeat(&c, session)
+			if err != nil {
+				return err
+			}
+		case "U"+protocol.DEIVCE_TIME_SYNC_CMD:			//时间同步（上行）
+			err = pp.prochTimeSync(&c, session)
+			if err != nil {
+				return err
+			}
+		case "U"+protocol.DEIVCE_LOCATON_CMD:			//定位数据（上行）
+			err = pp.prochLocation(&c, session)
+			if err != nil {
+				return err
+			}
+		case "U"+protocol.DEIVCE_LINK_DESC_CMD:			//连接用途请求通知（上行）
+			err = pp.prochLinkDesc(&c, session)
+			if err != nil {
+				return err
+			}
+		case "U"+protocol.DEIVCE_VOICE_READED_CMD:			//连接用途请求通知（上行）
+			err = pp.prochVoiceReaded(&c, session)
+			if err != nil {
+				return err
+			}
+		case "U"+protocol.DEIVCE_LOW_POWER_CMD:			//连接用途请求通知（上行）
+			err = pp.prochLowPower(&c, session)
+			if err != nil {
+				return err
+			}
+		case "U"+protocol.DEIVCE_SOS_CMD:			//连接用途请求通知（上行）
+			err = pp.prochSOS(&c, session)
+			if err != nil {
+				return err
+			}
 
-	case protocol.REQ_SEND_P2P_MSG_CMD:
-		err = pp.procSendMessageP2P(&c, session)
-		if err != nil {
-			log.Error("error:", err)
-			return err
-		}
-	case protocol.ROUTE_SEND_P2P_MSG_CMD:
-		err = pp.procRouteMessageP2P(&c, session)
-		if err != nil {
-			log.Error("error:", err)
-			return err
-		}
+		case protocol.REQ_LOGOUT_CMD:
+			err = pp.procLogout(&c, session)
+			if err != nil {
+				log.Error("error:", err)
+				return err
+			}
 
-	// p2p ack
-	case protocol.IND_ACK_P2P_STATUS_CMD:
-		err = pp.procP2pAck(&c, session)
-		if err != nil {
-			log.Error("error:", err)
-			return err
-		}
-	// p2p ack
-	case protocol.ROUTE_ACK_P2P_STATUS_CMD:
-		err = pp.procP2pAck(&c, session)
-		if err != nil {
-			log.Error("error:", err)
-			return err
-		}
+		case protocol.REQ_SEND_P2P_MSG_CMD:
+			err = pp.procSendMessageP2P(&c, session)
+			if err != nil {
+				log.Error("error:", err)
+				return err
+			}
+		case protocol.ROUTE_SEND_P2P_MSG_CMD:
+			err = pp.procRouteMessageP2P(&c, session)
+			if err != nil {
+				log.Error("error:", err)
+				return err
+			}
 
-	case protocol.REQ_SEND_TOPIC_MSG_CMD:
-		err = pp.procSendTopicMsg(&c, session)
-		if err != nil {
-			log.Error("error:", err)
-			return err
-		}
-	case protocol.ROUTE_SEND_TOPIC_MSG_CMD:
-		err = pp.procRouteTopicMsg(&c, session)
-		if err != nil {
-			log.Error("error:", err)
-			return err
-		}
+		// p2p ack
+		case protocol.IND_ACK_P2P_STATUS_CMD:
+			err = pp.procP2pAck(&c, session)
+			if err != nil {
+				log.Error("error:", err)
+				return err
+			}
+		// p2p ack
+		case protocol.ROUTE_ACK_P2P_STATUS_CMD:
+			err = pp.procP2pAck(&c, session)
+			if err != nil {
+				log.Error("error:", err)
+				return err
+			}
 
-	case protocol.REQ_CREATE_TOPIC_CMD:
-		err = pp.procCreateTopic(&c, session)
-		if err != nil {
-			log.Error("error:", err)
-			return err
-		}
+		case protocol.REQ_SEND_TOPIC_MSG_CMD:
+			err = pp.procSendTopicMsg(&c, session)
+			if err != nil {
+				log.Error("error:", err)
+				return err
+			}
+		case protocol.ROUTE_SEND_TOPIC_MSG_CMD:
+			err = pp.procRouteTopicMsg(&c, session)
+			if err != nil {
+				log.Error("error:", err)
+				return err
+			}
 
-	case protocol.REQ_ADD_2_TOPIC_CMD:
-		err = pp.procAdd2Topic(&c, session)
-		if err != nil {
-			log.Error("error:", err)
-			return err
-		}
+		case protocol.REQ_CREATE_TOPIC_CMD:
+			err = pp.procCreateTopic(&c, session)
+			if err != nil {
+				log.Error("error:", err)
+				return err
+			}
 
-	case protocol.REQ_KICK_TOPIC_CMD:
-		err = pp.procKickTopic(&c, session)
-		if err != nil {
-			log.Error("error:", err)
-			return err
-		}
+		case protocol.REQ_ADD_2_TOPIC_CMD:
+			err = pp.procAdd2Topic(&c, session)
+			if err != nil {
+				log.Error("error:", err)
+				return err
+			}
 
-	case protocol.REQ_JOIN_TOPIC_CMD:
-		err = pp.procJoinTopic(&c, session)
-		if err != nil {
-			log.Error("error:", err)
-			return err
-		}
+		case protocol.REQ_KICK_TOPIC_CMD:
+			err = pp.procKickTopic(&c, session)
+			if err != nil {
+				log.Error("error:", err)
+				return err
+			}
 
-	case protocol.REQ_QUIT_TOPIC_CMD:
-		err = pp.procQuitTopic(&c, session)
-		if err != nil {
-			log.Error("error:", err)
-			return err
-		}
+		case protocol.REQ_JOIN_TOPIC_CMD:
+			err = pp.procJoinTopic(&c, session)
+			if err != nil {
+				log.Error("error:", err)
+				return err
+			}
 
-	case protocol.REQ_GET_TOPIC_LIST_CMD:
-		err = pp.procGetTopicList(&c, session)
-		if err != nil {
-			log.Error("error:", err)
-			return err
-		}
+		case protocol.REQ_QUIT_TOPIC_CMD:
+			err = pp.procQuitTopic(&c, session)
+			if err != nil {
+				log.Error("error:", err)
+				return err
+			}
 
-	case protocol.REQ_GET_TOPIC_MEMBER_CMD:
-		err = pp.procGetTopicMember(&c, session)
-		if err != nil {
-			log.Error("error:", err)
-			return err
-		}
+		case protocol.REQ_GET_TOPIC_LIST_CMD:
+			err = pp.procGetTopicList(&c, session)
+			if err != nil {
+				log.Error("error:", err)
+				return err
+			}
+
+		case protocol.REQ_GET_TOPIC_MEMBER_CMD:
+			err = pp.procGetTopicMember(&c, session)
+			if err != nil {
+				log.Error("error:", err)
+				return err
+			}
 	}
 
 	return err

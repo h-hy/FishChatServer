@@ -46,14 +46,14 @@ func SelectServer(serverList []string, serverNum int) string {
 	return serverList[rand.Intn(serverNum)]
 }
 
-func GetSessionFromCID(storeOp interface{}, ID string) (interface{}, error) {
+func GetSessionFromIMEI(storeOp interface{}, IMEI string) (interface{}, error) {
 	switch storeOp.(type) {
 	case *redis_store.SessionCache:
 		// return (*redis_store.SessionCacheData)
-		SessionCacheData, err := storeOp.(*redis_store.SessionCache).Get(ID)
+		SessionCacheData, err := storeOp.(*redis_store.SessionCache).Get(IMEI)
 
 		if err != nil {
-			log.Warningf("no ID : %s", ID)
+			log.Warningf("no IMEI : %s", IMEI)
 			return nil, err
 		}
 		if SessionCacheData != nil {
@@ -63,10 +63,10 @@ func GetSessionFromCID(storeOp interface{}, ID string) (interface{}, error) {
 		return SessionCacheData, nil
 	case *mongo_store.MongoStore:
 		// return (*mongo_store.sessionStoreData)
-		sessionStoreData, err := storeOp.(*mongo_store.MongoStore).GetSessionFromCid(ID)
+		sessionStoreData, err := storeOp.(*mongo_store.MongoStore).GetSessionFromIMEI(IMEI)
 
 		if err != nil {
-			log.Warningf("no ID : %s", ID)
+			log.Warningf("no IMEI : %s", IMEI)
 			return nil, err
 		}
 		if sessionStoreData != nil {
@@ -92,13 +92,13 @@ func GetSessionFromCID(storeOp interface{}, ID string) (interface{}, error) {
 	//	return session, nil
 }
 
-func DelSessionFromCID(storeOp interface{}, ID string) error {
+func DelSessionFromIMEI(storeOp interface{}, IMEI string) error {
 	switch storeOp.(type) {
 	case *redis_store.SessionCache:
-		err := storeOp.(*redis_store.SessionCache).Delete(ID)
+		err := storeOp.(*redis_store.SessionCache).Delete(IMEI)
 
 		if err != nil {
-			log.Warningf("no ID : %s", ID)
+			log.Warningf("no IMEI : %s", IMEI)
 			return err
 		}
 	}

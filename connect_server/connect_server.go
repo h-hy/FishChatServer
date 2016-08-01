@@ -60,13 +60,13 @@ func version() {
 var InputConfFile = flag.String("conf_file", "connect_server.json", "input conf file name")
 
 func handleSession(ms *ConnectServer, session *connect_libnet.Session) {
+	fmt.Printf("handleSession")
 	session.Process(func(msg *connect_libnet.InBuffer) error {
-					fmt.Printf("msg.Data=%s\n",msg.Data)
+		fmt.Printf("callback parseProtocol")
 		err := ms.parseProtocol(msg.Data, session)
 		if err != nil {
 			log.Error(err.Error())
 		}
-
 		return nil
 	})
 }
@@ -94,7 +94,7 @@ func main() {
 
 	// ms := NewMsgServer(cfg, rs)
 	ms := NewMsgServer(cfg)
-
+	ms.msgServerClientEmptyMutex.Lock()
 	ms.server, err = connect_libnet.Listen(cfg.TransportProtocols, cfg.Listen)  //监听服务端口等待客户端连接
 	if err != nil {
 		panic(err)
@@ -102,7 +102,7 @@ func main() {
 	log.Info("connect_server running at  ", ms.server.Listener().Addr().String())
 
 	ms.subscribeChannels() //连接到消息服务器
-
+	
 	go ms.scanDeadSession()	//清理无用session
 	
 	go ms.scanDeadClient()	//清理无用消息服务器
@@ -113,18 +113,19 @@ func main() {
 		log.Info("a new client ", session.Conn().RemoteAddr().String(), " | come in")
 		session.AddCloseCallback(ms, func() {
 			//客户端下线，通知消息服务器
+			log.Info("AddCloseCallback callback")
 			if (session.IMEI != ""){
-				ms.scanSessionMutex.Lock()
+				// ms.scanSessionMutex.Lock()
 				cmd := protocol.NewCmdSimple(protocol.ACTION_GO_OFFLINE_CMD)
-				cmd.AddArg(session.IMEI)
+				cmd.Infos["IMEI"]=session.IMEI
 				pp := NewProtoProc(ms)
 				err = pp.procCheckMsgServer(session)
 				if err != nil{
-					ms.scanSessionMutex.Unlock()
+					// ms.scanSessionMutex.Unlock()
 					return 
 				}
 				err = pp.procTransferMsgServer(cmd, session)
-				ms.scanSessionMutex.Unlock()
+				// ms.scanSessionMutex.Unlock()
 			}
 		})
 		go handleSession(ms, session)

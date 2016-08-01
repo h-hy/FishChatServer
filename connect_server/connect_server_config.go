@@ -17,6 +17,7 @@ package main
 
 import (
 	"os"
+	// "io/ioutil"
 	"encoding/json"
 	"time"
 	"github.com/oikomi/FishChatServer/log"
@@ -56,6 +57,20 @@ func NewConnectServerConfig(configfile string) *ConnectServerConfig {
 }
 
 func (self *ConnectServerConfig)LoadConfig() error {
+  //   bytes, err := ioutil.ReadFile(self.configfile)
+  //   if err != nil {
+		// log.Error(err.Error())
+  //       return err
+  //   }
+
+  //   if err := json.Unmarshal(bytes, &self); err != nil {
+		// log.Error(err.Error())
+  //       return err
+  //   }
+
+  //   return nil
+
+    
 	file, err := os.Open(self.configfile)
 	if err != nil {
 		log.Error(err.Error())

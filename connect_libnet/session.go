@@ -6,7 +6,9 @@ import (
 	"net"
 	"sync/atomic"
 	"time"
+	// "fmt"
 
+	"github.com/oikomi/FishChatServer/log"
 	"github.com/oikomi/FishChatServer/connect_libnet/syncs"
 )
 
@@ -118,13 +120,18 @@ func (session *Session) IsClosed() bool {
 
 // Close session.
 func (session *Session) Close() {
+					log.Info("Close fun")
 	if atomic.CompareAndSwapInt32(&session.closeFlag, 0, 1) {
+					log.Info("Close fun ok")
 		session.conn.Close()
+					log.Info("Close ok")
 
 		// exit send loop and cancel async send
 		close(session.closeChan)
+					log.Info("close ok")
 
 		session.invokeCloseCallbacks()
+					log.Info("invokeCloseCallbacks ok")
 	}
 }
 
@@ -153,8 +160,10 @@ func (session *Session) sendBuffer(buffer *OutBuffer) error {
 
 // Process one request.
 func (session *Session) ProcessOnce(decoder Decoder) error {
+		// fmt.Printf("ProcessOnce")
 	session.readMutex.Lock()
 	defer session.readMutex.Unlock()
+		// fmt.Printf("ProcessOnce begin")
 
 	buffer := newInBuffer()
 	err := session.protocol.Read(session.conn, buffer)

@@ -20,7 +20,7 @@ import (
 	"flag"
 	"sync"
 	"time"
-	// "fmt"
+	"fmt"
 	"bytes"
 	"errors"
 
@@ -62,6 +62,9 @@ type ConnectServer struct {
 	readMutex        sync.Mutex // multi client session may ask for REDIS at the same time
 	msgServerClientMap  map[string]*msgServerClientState
 	msgServerClientMutex sync.Mutex
+	msgServerClientRWMutex sync.RWMutex
+	msgServerClientNum uint64
+	msgServerClientEmptyMutex sync.RWMutex
 }
 
 
@@ -78,6 +81,7 @@ func NewMsgServer(cfg *ConnectServerConfig) *ConnectServer {
 		// topicCache:      redis_store.NewTopicCache(rs),
 		// offlineMsgCache: redis_store.NewOfflineMsgCache(rs),
 		// p2pStatusCache:  redis_store.NewP2pStatusCache(rs),
+		msgServerClientNum:0,
 		mongoStore:      mongo_store.NewMongoStore(cfg.Mongo.Addr, cfg.Mongo.Port, cfg.Mongo.User, cfg.Mongo.Password),
 	}
 }
@@ -93,14 +97,18 @@ func (self *ConnectServer) scanDeadSession() {
 			go func() {
 				for id, s := range self.sessions {
 					self.scanSessionMutex.Lock()
+					log.Info("scanSessionMutex.Lock")
 					//defer self.scanSessionMutex.Unlock()
 					if (s.State).(*connect_base.SessionState).Alive == false {
+						log.Info("Alive = false")
 						log.Info("delete" + id)
 						self.procOffline(id)
 					} else {
+						log.Info("Alive = true")
 						s.State.(*connect_base.SessionState).Alive = false
 					}
 					self.scanSessionMutex.Unlock()
+					log.Info("scanSessionMutex.Unlock")
 				}
 			}()
 		case <-ttl:
@@ -111,9 +119,13 @@ func (self *ConnectServer) scanDeadSession() {
 
 func (self *ConnectServer) procOffline(ID string) {
 	// load all the topic list of this user
+					// log.Info("procOffline")
 	if self.sessions[ID] != nil {
+					// log.Info("self.sessions[ID] != nil")
 		self.sessions[ID].Close()
+					// log.Info("Close")
 		delete(self.sessions, ID)
+					// log.Info("deleted")
 
 		// sessionCacheData, err := self.sessionCache.Get(ID)
 		// if err != nil {
@@ -123,6 +135,7 @@ func (self *ConnectServer) procOffline(ID string) {
 		// sessionCacheData.Alive = false
 		// self.sessionCache.Set(sessionCacheData)
 	}
+					// log.Info("procOffline ok")
 }
 
 var info_spilt []byte  = []byte{'|'}
@@ -132,7 +145,7 @@ var data_begin []byte  = []byte{'{','<'}
 var data_end []byte  = []byte{'>','}'}
 func (self *ConnectServer) parseProtocol(cmd []byte, session *connect_libnet.Session) error {
 	var c protocol.CmdSimple
-	// fmt.Printf("parseProtocol\n")
+	fmt.Printf("parseProtocol\n")
 	// fmt.Printf("cmd=%s\n",cmd)
 
 	var index,nowindex,last_index int
@@ -154,7 +167,7 @@ func (self *ConnectServer) parseProtocol(cmd []byte, session *connect_libnet.Ses
 	IMEI := string(infos[3])
 	//包头信息提取完毕
 	last_index = bytes.Index(cmd,data_end)
-	if (index==-1){
+	if (last_index==-1){
 		return errors.New("cmd ERROR3")
 	}
 	//数据尾定位完毕
@@ -166,6 +179,7 @@ func (self *ConnectServer) parseProtocol(cmd []byte, session *connect_libnet.Ses
 	c.CmdName = string(cmd[nowindex+1:nowindex+index])
 	nowindex+=index+1
 	//命令编码提取完毕
+	// fmt.Printf("nowindex=%d,last_index=%d\n",nowindex,last_index)
 	for {
 		index = bytes.Index(cmd[nowindex:],data_spilt)
 		if (index==-1){
@@ -180,28 +194,35 @@ func (self *ConnectServer) parseProtocol(cmd []byte, session *connect_libnet.Ses
 		nowindex+=index+1
 	}
 	//完整提取完毕
+	// fmt.Printf("parseProtocol end\n")
 
 	pp := NewProtoProc(self)
 
-	self.readMutex.Lock()
-	defer self.readMutex.Unlock()
-	var err error
 	log.Infof("[%s]->[%s]", session.Conn().RemoteAddr().String(), self.cfg.LocalIP)
 	log.Info(c)
+	// self.readMutex.Lock()
+	// defer self.readMutex.Unlock()
+	var err error
 	
 	if session.State == nil {
+		// fmt.Printf("session.State  == nil\n")
 		self.scanSessionMutex.Lock()
+		// fmt.Printf("scanSessionMutex.Lock ok\n")
 		session.IMEI = IMEI
 		self.sessions[session.IMEI] = session
 		self.sessions[session.IMEI].State = connect_base.NewSessionState(true, session.IMEI, "Device")
 		self.scanSessionMutex.Unlock()
+	}else{
+		session.State.(*connect_base.SessionState).Alive = true
 	}
 
+	// fmt.Printf("parseProtocol procCheckMsgServer\n")
 	err = pp.procCheckMsgServer(session)
 	if err != nil{
 		return err
 	}
 
+	// fmt.Printf("parseProtocol procTransferMsgServer\n")
 	err = pp.procTransferMsgServer(&c, session)
 	if err != nil{
 		return err
@@ -209,6 +230,7 @@ func (self *ConnectServer) parseProtocol(cmd []byte, session *connect_libnet.Ses
 	// switch c.GetCmdName() {
 
 	// }
+	// fmt.Printf("parseProtocol return\n")
 	return nil
 }
 

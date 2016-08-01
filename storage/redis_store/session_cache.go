@@ -46,21 +46,19 @@ type SessionCacheData struct {
 	mongo_store.SessionStoreData
 
 	Alive         bool
+	Energy         int
 	ClientAddr    string
 	MsgServerAddr string
-	ID            string
 	MaxAge        time.Duration
 }
 
-func NewSessionCacheData(store_data *mongo_store.SessionStoreData, ClientAddr string, MsgServerAddr string, ID string) *SessionCacheData {
+func NewSessionCacheData(store_data *mongo_store.SessionStoreData, ClientAddr string, MsgServerAddr string) *SessionCacheData {
 	cacheData := &SessionCacheData{
 		ClientAddr:    ClientAddr,
 		MsgServerAddr: MsgServerAddr,
-		ID:            ID,
+		Alive: true,
 	}
-	cacheData.ClientID = store_data.ClientID
-	cacheData.ClientPwd = store_data.ClientPwd
-	cacheData.ClientName = store_data.ClientName
+	cacheData.IMEI = store_data.IMEI
 	cacheData.ClientType = store_data.ClientType
 	cacheData.TopicList = store_data.TopicList
 
@@ -72,7 +70,7 @@ func (self *SessionCacheData) checkClientID(clientID string) bool {
 }
 
 func (self *SessionCacheData) StoreKey() string {
-	return self.ClientID
+	return self.IMEI
 }
 
 // Get the session from the store.
@@ -103,9 +101,9 @@ func (self *SessionCache) Set(sess *SessionCacheData) error {
 	if err != nil {
 		return err
 	}
-	key := sess.ClientID + SESSION_UNIQ_PREFIX
+	key := sess.IMEI + SESSION_UNIQ_PREFIX
 	if self.RS.opts.KeyPrefix != "" {
-		key = self.RS.opts.KeyPrefix + ":" + sess.ClientID + SESSION_UNIQ_PREFIX
+		key = self.RS.opts.KeyPrefix + ":" + sess.IMEI + SESSION_UNIQ_PREFIX
 	}
 	ttl := sess.MaxAge
 	if ttl == 0 {

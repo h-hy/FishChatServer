@@ -18,7 +18,8 @@ package main
 import (
 	"flag"
 	"strconv"
-	_ "fmt"
+	"time"
+	// "bytes"
 
 	"github.com/oikomi/FishChatServer/base"
 	"github.com/oikomi/FishChatServer/common"
@@ -44,7 +45,7 @@ func NewProtoProc(msgServer *MsgServer) *ProtoProc {
 	}
 }
 
-func (self *ProtoProc) procSubscribeChannel(cmd protocol.Cmd, session *libnet.Session) {
+func (self *ProtoProc) procSubscribeChannel(cmd protocol.Cmd, session *libnet.Session) error {
 	log.Info("procSubscribeChannel")
 	channelName := cmd.GetArgs()[0]
 	cUUID := cmd.GetArgs()[1]
@@ -61,7 +62,7 @@ func (self *ProtoProc) procSubscribeChannel(cmd protocol.Cmd, session *libnet.Se
 	} else {
 		log.Warning(channelName + " is not exist")
 	}
-
+	return nil
 	// log.Info(self.msgServer.channels)
 }
 
@@ -87,24 +88,16 @@ func (self *ProtoProc) procPing(cmd protocol.Cmd, session *libnet.Session) error
 }
 
 func (self *ProtoProc) procGoOffLine(cmd protocol.Cmd, session *libnet.Session) error {
-	//log.Info("procPing")
-	//cid := session.State.(*base.SessionState).ClientID
-		//self.msgServer.sessions[cid].State.(*base.SessionState).Alive = true
-	if session.State != nil {
-        // fmt.Printf("session.State != nil")
-		self.msgServer.scanSessionMutex.Lock()
-		defer self.msgServer.scanSessionMutex.Unlock()
-		resp := protocol.NewCmdSimple(protocol.PING_CMD_ACK)
-		// log.Info(resp)
-        // fmt.Printf("resp=",resp)
-		err := session.Send(libnet.Json(resp))
-		if err != nil {
-			log.Error(err.Error())
-			return err
-		}
-		session.State.(*base.SessionState).Alive = true
+	IMEI := cmd.GetInfos()["IMEI"]
+
+	sessionCacheData, err := self.msgServer.sessionCache.Get(IMEI)
+	if sessionCacheData != nil {
+		sessionCacheData.MsgServerAddr=""
+		sessionCacheData.Alive=false
+		sessionCacheData.MaxAge=600 * time.Second
+		self.msgServer.sessionCache.Set(sessionCacheData)
 	}
-	return nil
+	return err
 }
 /*
    发送给消息接受者的消息
@@ -172,91 +165,222 @@ func (self *ProtoProc) procOfflineMsg(session *libnet.Session, ID string) error 
                arg0: SUCCESS/ERROR
 */
 
-func (self *ProtoProc) procLogin(cmd protocol.Cmd, session *libnet.Session) error {
-	log.Info("procLogin")
-	var err error
-	ClientID := cmd.GetArgs()[0]
-	uuid := cmd.GetArgs()[1]
-	resp := protocol.NewCmdSimple(protocol.RSP_LOGIN_CMD)
+func (self *ProtoProc) procSelectMsgServer(cmd protocol.Cmd, session *libnet.Session) error {
+	log.Info("procSelectMsgServer")
+	var msgServer string
+	IMEI := cmd.GetInfos()["IMEI"]
 
+
+	// resp := protocol.NewCmdSimple(protocol.RSP_LOGIN_CMD)
 	// for cache data
-	sessionCacheData, err := self.msgServer.sessionCache.Get(ClientID)
-	if err != nil {
-		log.Warningf("no ID : %s", ClientID)
-	} else if sessionCacheData.ID != uuid {
-		log.Warningf("ID(%s) & uuid(%s) not matched", ClientID, uuid)
-		err = common.NOT_LOGIN
-	}
-	if err == nil {
-		resp.AddArg(protocol.RSP_SUCCESS)
-	} else {
-		resp.AddArg(protocol.RSP_ERROR)
-	}
-	err2 := session.Send(libnet.Json(resp))
-	if err2 != nil {
-		log.Error(err2.Error())
-		return err2
-	}
-	if err != nil {
-		return err
-	}
-	// update the session cache
-	sessionCacheData.ClientAddr = session.Conn().RemoteAddr().String()
-	sessionCacheData.MsgServerAddr = self.msgServer.cfg.LocalIP
-	sessionCacheData.Alive = true
-	self.msgServer.sessionCache.Set(sessionCacheData)
+	msgServer = self.msgServer.cfg.LocalIP
 
-	log.Info(sessionCacheData)
+	session.State.(*base.SessionState).Devices[IMEI]=msgServer
 
-	self.msgServer.procOffline(ClientID)
-	self.msgServer.procOnline(ClientID)
-
-	/*
-		args := make([]string, 0)
-		args = append(args, cmd.GetArgs()[0])
-		CCmd := protocol.NewCmdInternal(protocol.CACHE_SESSION_CMD, args, sessionCacheData)
-
-		log.Info(CCmd)
-
-		if self.msgServer.channels[protocol.SYSCTRL_CLIENT_STATUS] != nil {
-			_, err = self.msgServer.channels[protocol.SYSCTRL_CLIENT_STATUS].Channel.Broadcast(libnet.Json(CCmd))
-			if err != nil {
-				log.Error(err.Error())
-				return err
-			}
-		}
-
+	// get the session store to check whether registered
+	sessionStoreData, _ := self.msgServer.mongoStore.GetSessionFromIMEI(IMEI)
+	if sessionStoreData == nil {
+		log.Warningf("IMEI %s not registered", IMEI)
 		// for store data
-		sessionStoreData := mongo_store.SessionStoreData{ID, session.Conn().RemoteAddr().String(),
-			self.msgServer.cfg.LocalIP, true}
-
+		sessionStoreData = mongo_store.NewSessionStoreData(IMEI)
 		log.Info(sessionStoreData)
-		args = make([]string, 0)
-		args = append(args, cmd.GetArgs()[0])
-		CCmd = protocol.NewCmdInternal(protocol.STORE_SESSION_CMD, args, sessionStoreData)
+		common.StoreData(self.msgServer.mongoStore, sessionStoreData)
+	}
+	// for cache data, MsgServer MUST update local & remote addr.
+	sessionCacheData := redis_store.NewSessionCacheData(sessionStoreData, session.Conn().RemoteAddr().String(), msgServer)
+	log.Info(sessionCacheData)
+	self.msgServer.sessionCache.Set(sessionCacheData)
+	//处理完成
+	return nil
+}
+func (self *ProtoProc) closeSession(IMEI string, session *libnet.Session) error {
+	resp := protocol.NewCmdSimple(protocol.ACTION_DO_CLOSE_SESSION_CMD)
+	resp.Infos["IMEI"]=IMEI
+	log.Info("Resp | ", resp)
 
-		log.Info(CCmd)
-
-		if self.msgServer.channels[protocol.STORE_CLIENT_INFO] != nil {
-			_, err = self.msgServer.channels[protocol.STORE_CLIENT_INFO].Channel.Broadcast(libnet.Json(CCmd))
-			if err != nil {
-				log.Error(err.Error())
+	if session != nil {
+		err := session.Send(libnet.Json(resp))
+		if err != nil {
+			log.Error(err.Error())
+		}
+	}
+	return nil
+}
+func (self *ProtoProc) checkCache(IMEI string, session *libnet.Session) (*redis_store.SessionCacheData,error) {
+	sessionCacheData, err := self.msgServer.sessionCache.Get(IMEI)
+	if sessionCacheData == nil {
+		log.Warningf("no cache IMEI : %s, err: %s", IMEI, err.Error())
+		sessionStoreData, err := self.msgServer.mongoStore.GetSessionFromIMEI(IMEI)
+		if sessionStoreData == nil {
+			// not registered
+			self.closeSession(IMEI,session)
+			log.Warningf("no store IMEI : %s, err: %s", IMEI, err.Error())
+			return nil,err
+		}else{
+			sessionCacheData := redis_store.NewSessionCacheData(sessionStoreData, session.Conn().RemoteAddr().String(), self.msgServer.cfg.LocalIP)
+			return sessionCacheData,nil
+		}
+	}
+	return sessionCacheData,nil
+}
+func (self *ProtoProc) prochHeartbeat(cmd protocol.Cmd, session *libnet.Session) error {
+	log.Info("prochHeartbeat")
+	resp := protocol.NewCmdSimple("C"+cmd.GetCmdName()[1:])
+	IMEI := cmd.GetInfos()["IMEI"]
+	if len(cmd.GetArgs()) == 2 {
+		energy,err := strconv.Atoi(cmd.GetArgs()[1])
+		if err != nil{
+			resp.AddArg("2")
+		}else{
+			resp.AddArg("1")
+			self.checkCache(IMEI,session)
+			sessionCacheData, err := self.msgServer.sessionCache.Get(IMEI)
+			if (err!=nil){
 				return err
 			}
+			if (sessionCacheData.Energy != energy){
+				sessionCacheData.Energy = energy
+				self.msgServer.sessionCache.Set(sessionCacheData)
+			}
 		}
-	*/
+	}else{
+		resp.AddArg("2")
+	}
 
-	self.msgServer.sessions[ClientID] = session
-	self.msgServer.sessions[ClientID].State = base.NewSessionState(true, ClientID, sessionCacheData.ClientType)
+	resp.Infos["IMEI"]=IMEI
 
-	err = self.procOfflineMsg(session, ClientID)
-	if err != nil {
-		log.Error(err.Error())
-		return err
+	if session != nil {
+		err := session.Send(libnet.Json(resp))
+		if err != nil {
+			log.Error(err.Error())
+		}
 	}
 	return nil
 }
 
+func (self *ProtoProc) prochTimeSync(cmd protocol.Cmd, session *libnet.Session) error {
+	log.Info("prochTimeSync")
+	resp := protocol.NewCmdSimple("C"+cmd.GetCmdName()[1:])
+	IMEI := cmd.GetInfos()["IMEI"]
+	resp.AddArg("1")
+	resp.AddArg(time.Now().Format("2006-01-02 15:04:05"))
+
+	resp.Infos["IMEI"]=IMEI
+
+	if session != nil {
+		err := session.Send(libnet.Json(resp))
+		if err != nil {
+			log.Error(err.Error())
+		}
+	}
+	return nil
+}
+
+func (self *ProtoProc) prochLocation(cmd protocol.Cmd, session *libnet.Session) error {
+	log.Info("prochLocation")
+	resp := protocol.NewCmdSimple("C"+cmd.GetCmdName()[1:])
+	IMEI := cmd.GetInfos()["IMEI"]
+	if len(cmd.GetArgs()) == 1 {
+		var locationInfo Location
+		locationInfo.Parse(cmd.GetArgs()[0])
+		log.Info("locationInfo=",locationInfo)
+		resp.AddArg("1")
+	}else{
+		resp.AddArg("2")
+	}
+
+	resp.Infos["IMEI"]=IMEI
+
+	if session != nil {
+		err := session.Send(libnet.Json(resp))
+		if err != nil {
+			log.Error(err.Error())
+		}
+	}
+	return nil
+}
+
+func (self *ProtoProc) prochLinkDesc(cmd protocol.Cmd, session *libnet.Session) error {
+	log.Info("prochLinkDesc")
+	resp := protocol.NewCmdSimple("C"+cmd.GetCmdName()[1:])
+	IMEI := cmd.GetInfos()["IMEI"]
+	if len(cmd.GetArgs()) == 2 {
+		commId := cmd.GetArgs()[0]
+		resp.AddArg(commId)
+		resp.AddArg("1")
+	}else if len(cmd.GetArgs()) == 1 {
+		commId := cmd.GetArgs()[0]
+		resp.AddArg(commId)
+		resp.AddArg("2")
+	}else{
+		resp.AddArg("2")
+	}
+
+	resp.Infos["IMEI"]=IMEI
+
+	if session != nil {
+		err := session.Send(libnet.Json(resp))
+		if err != nil {
+			log.Error(err.Error())
+		}
+	}
+	return nil
+}
+
+func (self *ProtoProc) prochVoiceReaded(cmd protocol.Cmd, session *libnet.Session) error {
+	log.Info("prochVoiceReaded")
+	resp := protocol.NewCmdSimple("C"+cmd.GetCmdName()[1:])
+	IMEI := cmd.GetInfos()["IMEI"]
+	if len(cmd.GetArgs()) == 1 {
+		id := cmd.GetArgs()[0]
+		resp.AddArg(id)
+		resp.AddArg("1")
+	}else{
+		resp.AddArg("2")
+	}
+
+	resp.Infos["IMEI"]=IMEI
+
+	if session != nil {
+		err := session.Send(libnet.Json(resp))
+		if err != nil {
+			log.Error(err.Error())
+		}
+	}
+	return nil
+}
+
+func (self *ProtoProc) prochLowPower(cmd protocol.Cmd, session *libnet.Session) error {
+	log.Info("prochLowPower")
+	resp := protocol.NewCmdSimple("C"+cmd.GetCmdName()[1:])
+	IMEI := cmd.GetInfos()["IMEI"]
+		resp.AddArg("1")
+	resp.Infos["IMEI"]=IMEI
+
+	if session != nil {
+		err := session.Send(libnet.Json(resp))
+		if err != nil {
+			log.Error(err.Error())
+		}
+	}
+	return nil
+}
+
+func (self *ProtoProc) prochSOS(cmd protocol.Cmd, session *libnet.Session) error {
+	log.Info("prochSOS")
+	resp := protocol.NewCmdSimple("C"+cmd.GetCmdName()[1:])
+	IMEI := cmd.GetInfos()["IMEI"]
+	resp.AddArg("1")
+	resp.Infos["IMEI"]=IMEI
+
+	if session != nil {
+		err := session.Send(libnet.Json(resp))
+		if err != nil {
+			log.Error(err.Error())
+		}
+	}
+	return nil
+}
 /*
    device/client -> MsgServer
        REQ_LOGOUT_CMD
@@ -309,7 +433,7 @@ func (self *ProtoProc) procP2PAckStatus(fromID string, uuid string, status strin
 	sessionCacheData, err := self.msgServer.sessionCache.Get(fromID)
 	if sessionCacheData == nil {
 		log.Warningf("no cache ID : %s, err: %s", fromID, err.Error())
-		sessionStoreData, err := self.msgServer.mongoStore.GetSessionFromCid(fromID)
+		sessionStoreData, err := self.msgServer.mongoStore.GetSessionFromIMEI(fromID)
 		if sessionStoreData == nil {
 			// not registered
 			log.Warningf("no store ID : %s, err: %s", fromID, err.Error())
@@ -432,7 +556,7 @@ func (self *ProtoProc) procSendMessageP2P(cmd protocol.Cmd, session *libnet.Sess
 
 	sessionCacheData, err = self.msgServer.sessionCache.Get(send2ID)
 	if sessionCacheData == nil {
-		sessionStoreData, err = self.msgServer.mongoStore.GetSessionFromCid(send2ID)
+		sessionStoreData, err = self.msgServer.mongoStore.GetSessionFromIMEI(send2ID)
 		if sessionStoreData == nil {
 			log.Warningf("send2ID %s not found", send2ID)
 			err = common.NOTFOUNT

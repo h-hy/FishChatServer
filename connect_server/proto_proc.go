@@ -17,7 +17,7 @@ package main
 
 import (
 	"flag"
-	"errors"
+	// "errors"
 	// "fmt"
 	// "strconv"
 
@@ -79,16 +79,26 @@ func (self *ProtoProc) procGetMinLoadMsgServer() string {
 }
 
 func (self *ProtoProc) procCheckMsgServer(session *connect_libnet.Session) error {
+	reSelect := false
+	MsgServer:=session.State.(*connect_base.SessionState).MsgServer
 	if (	session.State.(*connect_base.SessionState).MsgServer=="" || 
 			self.connectServer.msgServerClientMap[session.State.(*connect_base.SessionState).MsgServer] == nil || 
 			self.connectServer.msgServerClientMap[session.State.(*connect_base.SessionState).MsgServer].Valid != true){
+        self.connectServer.msgServerClientEmptyMutex.RLock()
+        defer self.connectServer.msgServerClientEmptyMutex.RUnlock()
+		//重新选择消息处理服务器
 		session.State.(*connect_base.SessionState).MsgServer=self.procGetMinLoadMsgServer()
+		reSelect=true
+		if (session.State.(*connect_base.SessionState).MsgServer==MsgServer){
+			reSelect=false
+		}
 	}
 
-	if (	session.State.(*connect_base.SessionState).MsgServer=="" || 
-			self.connectServer.msgServerClientMap[session.State.(*connect_base.SessionState).MsgServer] ==nil || 
-			self.connectServer.msgServerClientMap[session.State.(*connect_base.SessionState).MsgServer].Valid != true){
-		return errors.New("No MsgServer Valid.")
+	if (reSelect){
+		//告知消息服务器
+		cmd := protocol.NewCmdSimple(protocol.ACTION_SELECT_MSG_SERVER_CMD)
+		cmd.Infos["IMEI"]=session.IMEI
+		self.procTransferMsgServer(cmd, session)
 	}
 	return nil
 }
@@ -96,20 +106,25 @@ func (self *ProtoProc) procCheckMsgServer(session *connect_libnet.Session) error
 func (self *ProtoProc) procTransferMsgServer(cmd protocol.Cmd,session *connect_libnet.Session) error {
 	log.Info("procTransferMsgServer")
 	log.Info(cmd)
-	err := self.connectServer.msgServerClientMap[session.State.(*connect_base.SessionState).MsgServer].Session.Send(libnet.Json(cmd))
+	// self.connectServer.msgServerClientRWMutex.RLock()
+	// defer self.connectServer.msgServerClientRWMutex.RUnlock()
+	log.Info("procTransferMsgServer begin")
+
+	msgServer:=session.State.(*connect_base.SessionState).MsgServer
+	msgServerClient:=self.connectServer.msgServerClientMap[msgServer]
+	for {
+		msgServer=session.State.(*connect_base.SessionState).MsgServer
+		msgServerClient=self.connectServer.msgServerClientMap[msgServer]
+		if msgServerClient==nil {
+			self.procCheckMsgServer(session)
+		}else{
+			break
+		}
+	}
+	err := msgServerClient.Session.Send(libnet.Json(cmd))
 	if err != nil {
 		log.Error(err.Error())
 		return err
 	}
 	return nil
 }
-
-// func (self *ProtoProc) procGoOffLine(cmd protocol.Cmd, session *connect_libnet.Session) error {
-// 	var c protocol.CmdSimple
-// 	c.Infos=make(map[string]string)
-// 	c.Infos["ID"]=string(infos[0])
-// 	c.Infos["Project"]=string(infos[1])
-// 	c.Infos["Version"]=string(infos[2])
-// 	c.Infos["IMEI"]=string(infos[3])
-// 	return nil
-// }

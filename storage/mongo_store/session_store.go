@@ -16,18 +16,14 @@
 package mongo_store
 
 type SessionStoreData struct {
-	ClientID   string   `bson:"ClientID"`
-	ClientPwd  string   `bson:"ClientPwd"`
-	ClientName string   `bson:"ClientName"`
+	IMEI   string   `bson:"IMEI"`
 	ClientType string   `bson:"ClientType"`
 	TopicList  []string `bson:"TopicList"`
 }
 
-func NewSessionStoreData(clientID string, clientPwd string, clientType string) *SessionStoreData {
+func NewSessionStoreData(IMEI string,) *SessionStoreData {
 	return &SessionStoreData{
-		ClientID:   clientID,
-		ClientPwd:  clientPwd,
-		ClientType: clientType,
+		IMEI:   IMEI,
 		TopicList:  make([]string, 0),
 	}
 }

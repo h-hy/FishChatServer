@@ -68,9 +68,9 @@ func (self *MongoStore) Set(data interface{}) error {
 	switch data.(type) {
 	case *SessionStoreData:
 		op := self.session.DB(DATA_BASE_NAME).C(CLIENT_INFO_COLLECTION)
-		cid := data.(*SessionStoreData).ClientID
-		log.Info("cid : ", cid)
-		_, err = op.Upsert(bson.M{"ClientID": cid}, data.(*SessionStoreData))
+		IMEI := data.(*SessionStoreData).IMEI
+		log.Info("IMEI : ", IMEI)
+		_, err = op.Upsert(bson.M{"IMEI": IMEI}, data.(*SessionStoreData))
 		if err != nil {
 			log.Error(err.Error())
 			return err
@@ -120,8 +120,8 @@ func (self *MongoStore) DeleteTopic(cid string) error {
 	return op.Remove(bson.M{"TopicName": cid})
 }
 
-func (self *MongoStore) GetSessionFromCid(cid string) (*SessionStoreData, error) {
-	log.Info("MongoStore GetSessionFromCid")
+func (self *MongoStore) GetSessionFromIMEI(IMEI string) (*SessionStoreData, error) {
+	log.Info("MongoStore GetSessionFromIMEI")
 	var err error
 	self.rwMutex.Lock()
 	defer self.rwMutex.Unlock()
@@ -130,7 +130,7 @@ func (self *MongoStore) GetSessionFromCid(cid string) (*SessionStoreData, error)
 
 	var result *SessionStoreData
 
-	err = op.Find(bson.M{"ClientID": cid}).One(result)
+	err = op.Find(bson.M{"IMEI": IMEI}).One(result)
 	if err != nil {
 		log.Error(err.Error())
 		return nil, err
@@ -139,7 +139,7 @@ func (self *MongoStore) GetSessionFromCid(cid string) (*SessionStoreData, error)
 	return result, nil
 }
 
-func (self *MongoStore) DeleteSession(cid string) error {
+func (self *MongoStore) DeleteSession(IMEI string) error {
 	log.Info("MongoStore DeleteSession")
 
 	self.rwMutex.Lock()
@@ -147,7 +147,7 @@ func (self *MongoStore) DeleteSession(cid string) error {
 
 	op := self.session.DB(DATA_BASE_NAME).C(CLIENT_INFO_COLLECTION)
 
-	return op.Remove(bson.M{"ClientID": cid})
+	return op.Remove(bson.M{"IMEI": IMEI})
 }
 
 func (self *MongoStore) Close() {

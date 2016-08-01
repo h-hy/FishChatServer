@@ -52,6 +52,7 @@ type SessionState struct {
 	ClientID   string
 	Alive      bool
 	ClientType string
+	Devices map[string]string
 }
 
 func NewSessionState(alive bool, cid string, clienttype string) *SessionState {
@@ -59,6 +60,7 @@ func NewSessionState(alive bool, cid string, clienttype string) *SessionState {
 		ClientID:   cid,
 		Alive:      alive,
 		ClientType: clienttype,
+		Devices: make(map[string]string),
 	}
 }
 

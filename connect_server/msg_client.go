@@ -8,6 +8,7 @@ import (
     "errors"
 
     "github.com/oikomi/FishChatServer/libnet"
+    "github.com/oikomi/FishChatServer/connect_libnet"
     "github.com/oikomi/FishChatServer/log"
     "github.com/oikomi/FishChatServer/protocol"
 )
@@ -42,6 +43,37 @@ func (self *ConnectServer) scanDeadClient() {
             }()
         }
     }
+}
+
+func (self *ConnectServer)removeMsgServer(msgServer string) error {
+    self.msgServerClientMutex.Lock()
+    defer self.msgServerClientMutex.Unlock()
+
+    for index, ms := range self.cfg.MsgServerList {
+        if (ms==msgServer){
+            if self.msgServerClientMap[ms] != nil  {
+                self.msgServerClientMap[ms].Session.Close()
+            }
+            self.cfg.MsgServerList = append(self.cfg.MsgServerList[:index], self.cfg.MsgServerList[index+1:]...)
+        }
+    }
+    return nil
+}
+
+func (self *ConnectServer)addMsgServer(msgServer string) error {
+    self.msgServerClientMutex.Lock()
+    defer self.msgServerClientMutex.Unlock()
+    exist := false
+    for _, ms := range self.cfg.MsgServerList {
+        if (ms==msgServer){
+            exist=true
+        }
+    }
+    if (exist==false){
+        self.cfg.MsgServerList = append(self.cfg.MsgServerList,msgServer)
+        go self.subscribeChannels()
+    }
+    return nil
 }
 
 
@@ -80,13 +112,25 @@ func (self *ConnectServer)subscribeChannels() error {
         self.msgServerClientMap[ms].Valid = false
         self.msgServerClientMap[ms].ClientSessionNum = 0
         self.msgServerClientMap[ms].Session = msgServerClient
+
         //开始处理 消息服务器-> 接入服务器 的数据
         go func(ms string) {
+            // go self.removeMsgServer(ms)
             err := self.handleMsgServerClient(msgServerClient)
+            log.Infof("err=%s",err)
             if err !=nil {
+                if (self.msgServerClientMap[ms].Valid==true){
+                    self.msgServerClientNum--
+                    if (self.msgServerClientNum == 0){
+                        self.msgServerClientEmptyMutex.Lock()
+                    }
+                }
+                // self.msgServerClientRWMutex.Lock()
+                // defer self.msgServerClientRWMutex.Unlock()
                 delete(self.msgServerClientMap, ms)
+                log.Info("delete ok")
             }
-            self.subscribeChannels()
+            go self.subscribeChannels()
         }(ms)
     }
     return nil
@@ -115,8 +159,19 @@ func (self *ConnectServer)handleMsgServerClient(msc *libnet.Session) error {
         switch c.GetCmdName() {
             case protocol.SUBSCRIBE_CHANNEL_CMD_ACK:
                 self.msgServerClientMap[ms].Valid = true
+                self.msgServerClientNum++
+                if (self.msgServerClientNum==1){
+                    self.msgServerClientEmptyMutex.Unlock()
+                }
             case protocol.PING_CMD_ACK:
                 self.msgServerClientMap[ms].Alive = true
+            default:
+                if (c.GetInfos()["IMEI"]!=""){
+                    IMEI:=c.GetInfos()["IMEI"]
+                    if (self.sessions[IMEI]!=nil){
+                        self.sessions[IMEI].Send(connect_libnet.Bytes([]byte(c.GetDatas())))
+                    }
+                }
         }
         return nil
     })
