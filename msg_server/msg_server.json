@@ -20,12 +20,14 @@
 		"WriteTimeout" : 1000
 	},
 	
-	"Mongo"              : { 
-			"Addr"      : "127.0.0.1", 
-			"Port"      : ":27017",
-			"User"      : "",
-			"Password"  : ""
-
+	"Mysql"              : { 
+		"Addr"      : "127.0.0.1", 
+		"Port"      : "3306",
+		"User"      : "root",
+		"Password"  : "",
+		"Database"  : "watch",
+		"MaxOpenConn"  : 20,
+		"MaxOIdleConn"  : 10
 	}
 	
 }

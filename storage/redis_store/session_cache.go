@@ -52,15 +52,15 @@ type SessionCacheData struct {
 	MaxAge        time.Duration
 }
 
-func NewSessionCacheData(store_data *mongo_store.SessionStoreData, ClientAddr string, MsgServerAddr string) *SessionCacheData {
+func NewSessionCacheData(ClientAddr string, MsgServerAddr string) *SessionCacheData {
 	cacheData := &SessionCacheData{
 		ClientAddr:    ClientAddr,
 		MsgServerAddr: MsgServerAddr,
 		Alive: true,
 	}
-	cacheData.IMEI = store_data.IMEI
-	cacheData.ClientType = store_data.ClientType
-	cacheData.TopicList = store_data.TopicList
+	// cacheData.IMEI = store_data.IMEI
+	// cacheData.ClientType = store_data.ClientType
+	// cacheData.TopicList = store_data.TopicList
 
 	return cacheData
 }

@@ -59,7 +59,7 @@ const (
 	DEIVCE_VOICE_DOWN_CMD = "35"		//语音文件下行
 	DEIVCE_VOICE_UP_CMD = "36"			//语音文件上行
 	DEIVCE_LINK_DESC_CMD = "38"			//连接用途请求通知（上行）
-	DEIVCE_VOICE_READED_CMD = "39"   //阅读过的语音码文件反馈通知（上行）
+	DEIVCE_VOICE_READED_CMD = "39"   	//阅读过的语音码文件反馈通知（上行）
 	DEIVCE_LOW_POWER_CMD = "40"			//低电通知（上行）
 	DEIVCE_SOS_CMD = "41"				//紧急呼叫（上行）
 	/*

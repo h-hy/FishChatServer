@@ -39,11 +39,14 @@ type MsgServerConfig struct {
 		ReadTimeout time.Duration
 		WriteTimeout time.Duration
 	} 
-	Mongo struct { 
+	Mysql struct { 
 		Addr           string 
 		Port           string
 		User           string
 		Password       string
+		Database       string
+		MaxOpenConn       int
+		MaxOIdleConn       int
 	} 
 }
 
