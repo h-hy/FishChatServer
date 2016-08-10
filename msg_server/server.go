@@ -247,11 +247,23 @@ func (self *MsgServer) parseProtocol(cmd []byte, session *libnet.Session) error 
 			if err != nil {
 				return err
 			}
+		case "U"+protocol.DEIVCE_UPDATE_SETTING_CMD:			//连接用途请求通知（上行）
+			err = pp.prochupdateSetting(&c, session)
+			if err != nil {
+				return err
+			}
 		case "U"+protocol.DEIVCE_SOS_CMD:			//连接用途请求通知（上行）
 			err = pp.prochSOS(&c, session)
 			if err != nil {
 				return err
 			}
+		// case "U"+protocol.DEIVCE_VOICE_UP_CMD:	//语音文件上行
+		// 	err = pp.prochVoiceUp(&c, session)
+		// 	if err != nil {
+		// 		return err
+		// 	}
+
+
 
 		// case protocol.REQ_LOGOUT_CMD:
 		// 	err = pp.procLogout(&c, session)

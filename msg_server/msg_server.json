@@ -28,6 +28,12 @@
 		"Database"  : "watch",
 		"MaxOpenConn"  : 20,
 		"MaxOIdleConn"  : 10
+	},
+	
+	"AmapKey" : { 
+		"name"     : "watch_server", 
+		"key"      : "698028f2d74a36a25c5af5bea759b482"
 	}
 	
 }
+	

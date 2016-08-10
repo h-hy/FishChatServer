@@ -22,7 +22,8 @@ import (
 	"github.com/astaxie/beego"
 	"github.com/oikomi/FishChatServer/libnet"
 	"github.com/oikomi/FishChatServer/log"
-	"github.com/oikomi/FishChatServer/monitor/controllers"
+	//	_ "github.com/oikomi/FishChatServer/monitor/docs"
+	//	"github.com/oikomi/FishChatServer/monitor/controllers"
 	_ "github.com/oikomi/FishChatServer/monitor/routers"
 )
 
@@ -35,15 +36,15 @@ const char* build_time(void) {
 	return psz_build_time;
 }
 */
-import "C"
+//import "C"
 
-var (
-	buildTime = C.GoString(C.build_time())
-)
+//var (
+//	buildTime = C.GoString(C.build_time())
+//)
 
-func BuildTime() string {
-	return buildTime
-}
+//func BuildTime() string {
+//	return buildTime
+//}
 
 const VERSION string = "0.10"
 
@@ -60,7 +61,7 @@ var InputConfFile = flag.String("conf_file", "monitor.json", "input conf file na
 
 func main() {
 	version()
-	fmt.Printf("built on %s\n", BuildTime())
+	//	fmt.Printf("built on %s\n", BuildTime())
 	flag.Parse()
 	cfg := NewMonitorConfig(*InputConfFile)
 	err := cfg.LoadConfig()
@@ -76,15 +77,12 @@ func main() {
 	}
 	log.Info("server start: ", server.Listener().Addr().String())
 
-	m := NewMonitor(cfg)
-	//TODO not use go
-	m.subscribeChannels()
+	//	m := NewMonitor(cfg)
+
+	//	m.subscribeChannels()
 	go server.Serve(func(session *libnet.Session) {
 
 	})
 
-	beego.Router("api/v1/monitor", &controllers.MonitorController{})
-	//beego.SetStaticPath("/views", "/mh/mygo/src/github.com/oikomi/FishChatServer/monitor/views")
-	beego.SetStaticPath("/views", "views")
 	beego.Run()
 }

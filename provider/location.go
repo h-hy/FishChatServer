@@ -3,6 +3,10 @@ package provider
 import (
     "errors"
     "bytes"
+    "io/ioutil"
+    "net/http"
+    "encoding/json"
+    "strings"
 )
 
 type LBSInfo struct {
@@ -24,8 +28,9 @@ type GPSInfo struct {
 
 type Location struct {
     Type    byte
-    LBSInfo []LBSInfo
+    LBSInfo []*LBSInfo
     GPSInfo GPSInfo
+    LocationData locationDataStruct
 }
 // L|3571,9763,00,460,50|100|100
 // G|100008.000,A,2232.4679,N,11356.7805,E,0.204,89.22,210911,,|7.49|152.6|100|100
@@ -63,6 +68,11 @@ func (self *Location) Parse(locatonRaw string) error {
     }else if (locationDataSlice[0]=="L"){
         self.Type='L'
         self.LBSInfoParse(locationDataSlice)
+        locationReturn,err := self.LoadLocationInfo()
+        if (err != nil){
+             return nil
+        }
+        self.LocationData = (*locationReturn).Result
     }
     return nil
 }
@@ -97,7 +107,7 @@ func (self *Location) LBSInfoParse(lbsRaw []string) error {
     return nil
 }
 // 15653,31040,33,64,49,0,460
-func (self *Location) LoadLBSCell(cell string) (LBSInfo, error) {
+func (self *Location) LoadLBSCell(cell string) (*LBSInfo, error) {
     var LBSCellSlice []string
     locationData:=[]byte(cell)
     var data_spilt []byte  = []byte{','}
@@ -116,7 +126,7 @@ func (self *Location) LoadLBSCell(cell string) (LBSInfo, error) {
         LBSCellSlice = append(LBSCellSlice, arg)
         nowindex+=index+1
     }
-    var LbSCell LBSInfo
+    LbSCell := &LBSInfo{}
     if (len(LBSCellSlice)<7){
         return LbSCell,errors.New("Cell Error")
     }
@@ -128,6 +138,64 @@ func (self *Location) LoadLBSCell(cell string) (LBSInfo, error) {
     LbSCell.Mnc=LBSCellSlice[5]
     LbSCell.Mcc=LBSCellSlice[6]
     return LbSCell,nil
+}
+
+    // Cid    string
+    // Lac    string
+    // Rssi    string
+    // Arfcn    string
+    // Bsic    string
+    // Mnc    string
+    // Mcc    string
+func (self *Location) LoadLocationInfo() (*locationReturn, error) {
+    locationReturn := &locationReturn{}
+    if (self.Type!='L'){
+        return locationReturn,errors.New("Not LBS Location")
+    }
+    if (len(self.LBSInfo)<1){
+        return locationReturn,errors.New("LBSInfo Empty")
+    }
+    //开始构建url
+    bts :="bts="+self.LBSInfo[0].Mcc+","+self.LBSInfo[0].Mnc+","+self.LBSInfo[0].Lac+","+self.LBSInfo[0].Cid+","+self.LBSInfo[0].Rssi
+    var nearbts []string
+    for i := 1; i < len(self.LBSInfo); i++ {
+        nearbts =append(nearbts,self.LBSInfo[0].Mcc+","+self.LBSInfo[0].Mnc+","+self.LBSInfo[0].Lac+","+self.LBSInfo[0].Cid+","+self.LBSInfo[0].Rssi)
+    }
+    client := &http.Client{}
+    
+    //开始发出请求
+    resp, err := client.Get("http://apilocate.amap.com/position?key=698028f2d74a36a25c5af5bea759b482&accesstype=0&imei=352315052834187&cdma=0&bts="+bts+"&nearbts="+strings.Join(nearbts,"|"))
+
+    defer resp.Body.Close()
+
+    //开始读取回复
+    body, err := ioutil.ReadAll(resp.Body)
+    if err != nil {
+        return locationReturn,err
+    }
+    //开始解析json
+    err = json.Unmarshal(body, locationReturn) // JSON to Struct
+    return locationReturn,nil
+}
+type locationDataStruct struct {
+    Type  string `json:"type"`
+    Location  string `json:"location"`
+    Eadius  string `json:"radius"`
+    Desc  string `json:"desc"`
+    Country  string `json:"country"`
+    Province  string `json:"province"`
+    City  string `json:"city"`
+    Citycode  string `json:"citycode"`
+    Adcode  string `json:"adcode"`
+    Road  string `json:"road"`
+    Street  string `json:"street"`
+    Poi  string `json:"poi"`
+}
+type locationReturn struct {
+    Status            uint64 `json:"status"`
+    Info       string `json:"info"`
+    Infocode  string `json:"infocode"`
+    Result  locationDataStruct
 }
 
 // G|100008.000,A,2232.4679,N,11356.7805,E,0.204,89.22,210911,,|7.49|152.6|100|100

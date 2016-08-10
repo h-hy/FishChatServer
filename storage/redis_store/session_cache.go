@@ -52,7 +52,7 @@ type SessionCacheData struct {
 	MaxAge        time.Duration
 }
 
-func NewSessionCacheData(ClientAddr string, MsgServerAddr string) *SessionCacheData {
+func NewSessionCacheData(ClientAddr string, MsgServerAddr string,data map[string]string) *SessionCacheData {
 	cacheData := &SessionCacheData{
 		ClientAddr:    ClientAddr,
 		MsgServerAddr: MsgServerAddr,

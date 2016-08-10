@@ -93,10 +93,17 @@ func (self *ProtoProc) procGoOffLine(cmd protocol.Cmd, session *libnet.Session) 
 	sessionCacheData, err := self.msgServer.sessionCache.Get(IMEI)
 	if sessionCacheData != nil {
 		sessionCacheData.MsgServerAddr=""
+		if (sessionCacheData.Alive != false){
+			self.msgServer.mysqlStore.DeviceUpdate(IMEI,"alive=false")
+		}
 		sessionCacheData.Alive=false
 		sessionCacheData.MaxAge=600 * time.Second
 		self.msgServer.sessionCache.Set(sessionCacheData)
+	}else{
+		self.msgServer.mysqlStore.DeviceUpdate(IMEI,"alive=false")
 	}
+
+
 	return err
 }
 
@@ -121,7 +128,7 @@ func (self *ProtoProc) procSelectMsgServer(cmd protocol.Cmd, session *libnet.Ses
 		// log.Info(deviceStoreData)
 	}
 	// for cache data, MsgServer MUST update local & remote addr.
-	sessionCacheData := redis_store.NewSessionCacheData(session.Conn().RemoteAddr().String(), msgServer)
+	sessionCacheData := redis_store.NewSessionCacheData(session.Conn().RemoteAddr().String(), msgServer, deviceStoreData)
 	log.Info(sessionCacheData)
 	self.msgServer.sessionCache.Set(sessionCacheData)
 	//处理完成
@@ -151,7 +158,7 @@ func (self *ProtoProc) checkCache(IMEI string, session *libnet.Session) (*redis_
 			log.Warningf("no store IMEI : %s, err: %s", IMEI, err.Error())
 			return nil,err
 		}else{
-			sessionCacheData := redis_store.NewSessionCacheData( session.Conn().RemoteAddr().String(), self.msgServer.cfg.LocalIP)
+			sessionCacheData := redis_store.NewSessionCacheData(session.Conn().RemoteAddr().String(), self.msgServer.cfg.LocalIP, deviceStoreData)
 			return sessionCacheData,nil
 		}
 	}
@@ -172,8 +179,12 @@ func (self *ProtoProc) prochHeartbeat(cmd protocol.Cmd, session *libnet.Session)
 			if (err!=nil){
 				return err
 			}
-			if (sessionCacheData.Energy != energy){
+			if (sessionCacheData.Energy != energy || sessionCacheData.Alive != true){
 				sessionCacheData.Energy = energy
+				if (sessionCacheData.Alive != true){
+					self.msgServer.mysqlStore.DeviceUpdate(IMEI,"alive=true")
+				}
+				sessionCacheData.Alive = true
 				self.msgServer.sessionCache.Set(sessionCacheData)
 			}
 		}
@@ -218,6 +229,7 @@ func (self *ProtoProc) prochLocation(cmd protocol.Cmd, session *libnet.Session) 
 		var locationInfo provider.Location
 		locationInfo.Parse(cmd.GetArgs()[0])
 		log.Info("locationInfo=",locationInfo)
+		log.Info("locationInfo.LocationData=",locationInfo.LocationData)
 		resp.AddArg("1")
 	}else{
 		resp.AddArg("2")
@@ -288,7 +300,7 @@ func (self *ProtoProc) prochLowPower(cmd protocol.Cmd, session *libnet.Session) 
 	log.Info("prochLowPower")
 	resp := protocol.NewCmdSimple("C"+cmd.GetCmdName()[1:])
 	IMEI := cmd.GetInfos()["IMEI"]
-		resp.AddArg("1")
+	resp.AddArg("1")
 	resp.Infos["IMEI"]=IMEI
 
 	if session != nil {
@@ -315,32 +327,20 @@ func (self *ProtoProc) prochSOS(cmd protocol.Cmd, session *libnet.Session) error
 	}
 	return nil
 }
-/*
-   device/client -> MsgServer
-       REQ_LOGOUT_CMD
 
-   MsgServer -> device/client
-       RSP_LOGOUT_CMD
-       arg0: SUCCESS/ERROR
-*/
 
-func (self *ProtoProc) procLogout(cmd protocol.Cmd, session *libnet.Session) error {
-	log.Info("procLogout")
-	var err error
+func (self *ProtoProc) prochupdateSetting(cmd protocol.Cmd, session *libnet.Session) error {
+	log.Info("prochupdateSetting")
+	resp := protocol.NewCmdSimple("C"+cmd.GetCmdName()[1:])
+	IMEI := cmd.GetInfos()["IMEI"]
+	resp.AddArg("1")
+	resp.Infos["IMEI"]=IMEI
 
-	ClientID := session.State.(*base.SessionState).ClientID
-
-	resp := protocol.NewCmdSimple(protocol.RSP_LOGOUT_CMD)
-	resp.AddArg(protocol.RSP_SUCCESS)
-
-	err = session.Send(libnet.Json(resp))
-	if err != nil {
-		log.Error(err.Error())
+	if session != nil {
+		err := session.Send(libnet.Json(resp))
+		if err != nil {
+			log.Error(err.Error())
+		}
 	}
-
-	self.msgServer.procOffline(ClientID)
-
-	self.msgServer.sessionCache.Delete(ClientID)
-
-	return err
+	return nil
 }
