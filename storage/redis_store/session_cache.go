@@ -17,11 +17,13 @@ package redis_store
 
 import (
 	"encoding/json"
+	"fmt"
+	"strconv"
 	"sync"
 	"time"
 
 	"github.com/garyburd/redigo/redis"
-	"github.com/oikomi/FishChatServer/storage/mongo_store"
+	"github.com/oikomi/FishChatServer/provider"
 )
 
 type SessionCache struct {
@@ -37,26 +39,54 @@ func NewSessionCache(RS *RedisStore) *SessionCache {
 
 type SessionCacheData struct {
 	/*
-		ClientID   string
-		ClientPwd  string
-		ClientName string
-		ClientType string
-		TopicList  []string
+			ClientID   string
+			ClientPwd  string
+			ClientName string
+			ClientType string
+			TopicList  []string
+		mongo_store.SessionStoreData
 	*/
-	mongo_store.SessionStoreData
 
-	Alive         bool
-	Energy         int
-	ClientAddr    string
-	MsgServerAddr string
-	MaxAge        time.Duration
+	IMEI              string
+	WorkModel         int
+	Alive             bool
+	Energy            int
+	Volume            int
+	ClientAddr        string
+	MsgServerAddr     string
+	ConnectServerUUID string
+	MaxAge            time.Duration
+	Location          provider.LocationDataStruct
 }
 
-func NewSessionCacheData(ClientAddr string, MsgServerAddr string,data map[string]string) *SessionCacheData {
+func NewSessionCacheData(IMEI, ClientAddr string, MsgServerAddr, ConnectServerUUID string, data map[string]interface{}) *SessionCacheData {
+	var energy int
+	if data["energy"] == nil {
+		energy = 0
+	} else {
+		energy, _ = strconv.Atoi(data["energy"].(string))
+	}
+	var work_model int
+	if data["work_model"] == nil {
+		work_model = 0
+	} else {
+		work_model, _ = strconv.Atoi(data["work_model"].(string))
+	}
+	var volume int
+	if data["volume"] == nil {
+		volume = 0
+	} else {
+		volume, _ = strconv.Atoi(data["volume"].(string))
+	}
 	cacheData := &SessionCacheData{
-		ClientAddr:    ClientAddr,
-		MsgServerAddr: MsgServerAddr,
-		Alive: true,
+		IMEI:              IMEI,
+		ClientAddr:        ClientAddr,
+		MsgServerAddr:     MsgServerAddr,
+		ConnectServerUUID: ConnectServerUUID,
+		Alive:             true,
+		Energy:            energy,
+		WorkModel:         work_model,
+		Volume:            volume,
 	}
 	// cacheData.IMEI = store_data.IMEI
 	// cacheData.ClientType = store_data.ClientType
@@ -105,6 +135,7 @@ func (self *SessionCache) Set(sess *SessionCacheData) error {
 	if self.RS.opts.KeyPrefix != "" {
 		key = self.RS.opts.KeyPrefix + ":" + sess.IMEI + SESSION_UNIQ_PREFIX
 	}
+	fmt.Print(key)
 	ttl := sess.MaxAge
 	if ttl == 0 {
 		// Browser session, set to specified TTL

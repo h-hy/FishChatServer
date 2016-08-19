@@ -453,30 +453,11 @@ define({ "api": [
   },
   {
     "type": "delete",
-    "url": "/device/:IMEI",
+    "url": "/device/:IMEI?username=:user&ticket=:ticket",
     "title": "用户删除绑定设备",
+    "description": "<p>特别说明：根据HTTP标准，DELETE方法的身份认证参数务必放在url中而不能放在body中。</p>",
     "name": "deviceDestory",
     "group": "Device",
-    "parameter": {
-      "fields": {
-        "Parameter": [
-          {
-            "group": "Parameter",
-            "type": "String",
-            "optional": false,
-            "field": "username",
-            "description": "<p>用户名</p>"
-          },
-          {
-            "group": "Parameter",
-            "type": "String",
-            "optional": false,
-            "field": "ticket",
-            "description": "<p>用户接口调用凭据</p>"
-          }
-        ]
-      }
-    },
     "success": {
       "examples": [
         {
@@ -491,7 +472,7 @@ define({ "api": [
     "groupTitle": "Device",
     "sampleRequest": [
       {
-        "url": "http://api.watch.h-hy.com:8080/v1/device/:IMEI"
+        "url": "http://api.watch.h-hy.com:8080/v1/device/:IMEI?username=:user&ticket=:ticket"
       }
     ]
   },
@@ -700,6 +681,7 @@ define({ "api": [
     "type": "get",
     "url": "/user/:username",
     "title": "查看用户信息",
+    "description": "<p>接口中的融云token如果失效，需要调用“刷新融云密钥”接口来刷新</p>",
     "name": "userDetail",
     "group": "User",
     "parameter": {
@@ -1159,6 +1141,61 @@ define({ "api": [
     "sampleRequest": [
       {
         "url": "http://api.watch.h-hy.com:8080/v1/user/:username"
+      }
+    ]
+  },
+  {
+    "type": "get",
+    "url": "/user/:username/updateRongCloudToken",
+    "title": "刷新融云密钥",
+    "name": "userUpdateRongCloudToken",
+    "group": "User",
+    "parameter": {
+      "fields": {
+        "Parameter": [
+          {
+            "group": "Parameter",
+            "type": "String",
+            "optional": false,
+            "field": "ticket",
+            "description": "<p>用户接口调用凭据</p>"
+          }
+        ]
+      }
+    },
+    "success": {
+      "fields": {
+        "Success 200": [
+          {
+            "group": "Success 200",
+            "type": "String",
+            "optional": false,
+            "field": "rongCloudAppKey",
+            "description": "<p>融云AppKey</p>"
+          },
+          {
+            "group": "Success 200",
+            "type": "String",
+            "optional": false,
+            "field": "rongCloudToken",
+            "description": "<p>融云token</p>"
+          }
+        ]
+      },
+      "examples": [
+        {
+          "title": "Success-Response:",
+          "content": "HTTP/1.1 200 OK\n{\n    \"errcode\": 0,\n    \"errmsg\": \"操作成功\",\n    \"data\": {\n        \"rongCloudAppKey\": \"rongCloudAppKey\"\n        \"rongCloudToken\": \"rongCloudToken\"\n    }\n}",
+          "type": "json"
+        }
+      ]
+    },
+    "version": "0.0.0",
+    "filename": "./controllers/user.go",
+    "groupTitle": "User",
+    "sampleRequest": [
+      {
+        "url": "http://api.watch.h-hy.com:8080/v1/user/:username/updateRongCloudToken"
       }
     ]
   },

@@ -4,7 +4,12 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"time"
+
 	"github.com/astaxie/beego"
+	"github.com/astaxie/beego/orm"
+	"github.com/oikomi/FishChatServer/log"
+	"github.com/oikomi/FishChatServer/monitor/models"
 	"github.com/rongcloud/server-sdk-go/RCServerSDK"
 )
 
@@ -19,11 +24,11 @@ func (this *UserController) Prepare() {
 	_, actionName := this.GetControllerAndAction()
 	this.username = this.Ctx.Input.Param(":username")
 	if actionName != "Login" && actionName != "Post" && actionName != "ResetPassword" && actionName != "GetSMSCode" {
-
 		ticket := this.GetString("ticket")
-		if this.username == "" || ticket == "" {
-			this.Data["json"] = restReturn(44001, "尚未登录或者登陆失效["+actionName+"]", map[string]interface{}{})
+		if models.UserCheckTicket(this.username, ticket) == false {
+			this.Data["json"] = restReturn(ERROR_USER_TICKET, ERROR_USER_TICKET_STRING, map[string]interface{}{})
 			this.ServeJSON()
+			return
 		}
 	}
 }
@@ -36,7 +41,15 @@ func (this *UserController) initRongCloud() (*RCServerSDK.RCServer, error) {
 
 }
 
-func (this *UserController) getRongCloudToken(userId, name, portraitUri string) (string, error) {
+func (this *UserController) getRongCloudToken(userId, name, portraitUri string, getNew bool) (string, error) {
+	if getNew == false {
+		rongCloudToken := redisCache.Get("rongCloudToken_" + userId)
+		if rongCloudToken != nil {
+			rongCloudTokenString := GetString(rongCloudToken)
+			return rongCloudTokenString, nil
+		}
+	}
+
 	rcServer, rcError := this.initRongCloud()
 	if rcError != nil {
 		return "", rcError
@@ -50,6 +63,7 @@ func (this *UserController) getRongCloudToken(userId, name, portraitUri string) 
 		Token string `json:"token"`
 	}
 	json.Unmarshal(byteData, &UserGetToken)
+	redisCache.Put("rongCloudToken_"+userId, UserGetToken.Token, 30*time.Minute)
 	return UserGetToken.Token, nil
 }
 
@@ -102,24 +116,38 @@ func (this *UserController) getRongCloudToken(userId, name, portraitUri string) 
 
 // @router / [post]
 func (this *UserController) Post() {
+
 	username := this.GetString("username")
 	password := this.GetString("password")
 	if username == "" {
-		this.Data["json"] = restReturn(20003, "用户名不能为空", map[string]interface{}{})
+		this.Data["json"] = restReturn(ERROR_USER_NAME_NEED, ERROR_USER_NAME_NEED_STRING, map[string]interface{}{})
 		this.ServeJSON()
+		return
 	}
 	if password == "" {
-		this.Data["json"] = restReturn(20003, "密码不能为空", map[string]interface{}{})
+		this.Data["json"] = restReturn(ERROR_USER_NAME_PASSWORD_NEED, ERROR_USER_NAME_PASSWORD_NEED_STRING, map[string]interface{}{})
 		this.ServeJSON()
+		return
 	}
-	//	var user models.User
-	//	json.Unmarshal(u.Ctx.Input.RequestBody, &user)
-	//	uid := models.AddUser(user)
-	//	this.Data["json"] = map[string]interface{}{"name": "astaxie"}
-	this.Data["json"] = restReturn(0, "注册成功", map[string]interface{}{
-		"username": "13590210000",
-		"ticket":   "abcdefg",
-	})
+	code := this.GetString("code")
+	var openid string
+	if code != "" {
+		openidCache := redisCache.Get("WechatAuthCode_" + code)
+		log.Info("WechatAuthCode_" + code)
+		if openidCache == nil {
+			this.Data["json"] = restReturn(ERROR_WECHAT_CODE_ERROR, ERROR_WECHAT_CODE_ERROR_STRING, map[string]interface{}{})
+			this.ServeJSON()
+			return
+		} else {
+			openid = GetString(openidCache)
+			models.UserCleanOpenid(openid)
+		}
+	}
+	errcode, errmsg, data := models.UserRegist(username, username, password, openid)
+	if errcode == 0 {
+		redisCache.Delete("WechatAuthCode_" + code)
+	}
+	this.Data["json"] = restReturn(errcode, errmsg, data)
 	this.ServeJSON()
 }
 
@@ -174,32 +202,99 @@ func (this *UserController) ResetPassword() {
 	password := this.GetString("password")
 	SMScode := this.GetString("SMScode")
 	if username == "" || password == "" {
-		this.Data["json"] = restReturn(20003, "用户名和密码不能为空", map[string]interface{}{})
+		this.Data["json"] = restReturn(ERROR_USER_NAME_PASSWORD_NEED, ERROR_USER_NAME_PASSWORD_NEED_STRING, map[string]interface{}{})
 		this.ServeJSON()
+		return
 	}
 	if SMScode == "" {
-		this.Data["json"] = restReturn(20004, "短信验证码不能为空", map[string]interface{}{})
+		this.Data["json"] = restReturn(ERROR_USER_SMS_CODE_NEED, ERROR_USER_SMS_CODE_NEED_STRING, map[string]interface{}{})
 		this.ServeJSON()
+		return
 	}
-	if SMScode != "123456" {
-		this.Data["json"] = restReturn(20013, "短信验证码错误，为123456", map[string]interface{}{})
+	//开始验证码校验
+	SMSCodeCache := redisCache.Get("SMSCode_" + username)
+	log.Info("SMSCode_" + username)
+	if SMSCodeCache == nil {
+		this.Data["json"] = restReturn(ERROR_USER_SMS_CODE_NOT_FOUND, ERROR_USER_SMS_CODE_NOT_FOUND_STRING, map[string]interface{}{})
 		this.ServeJSON()
+		return
 	}
-	//	this.Data["json"] = map[string]interface{}{"name": "astaxie"}
-	this.Data["json"] = restReturn(0, "密码重置成功", map[string]interface{}{
-		"username": "13590210000",
-		"ticket":   "abcdefg",
+	SMSCodeCacheString := GetString(SMSCodeCache)
+	if SMSCodeCacheString != SMScode || SMSCodeCacheString == "" {
+
+		this.Data["json"] = restReturn(ERROR_USER_SMS_CODE_ERROR, ERROR_USER_SMS_CODE_ERROR_STRING, map[string]interface{}{})
+		this.ServeJSON()
+		return
+	}
+	//开始用户校验
+
+	o := orm.NewOrm()
+	user, err := models.GetUser(username)
+
+	log.Info(err)
+	if err == orm.ErrNoRows {
+		this.Data["json"] = restReturn(ERROR_USER_NOT_FOUND, ERROR_USER_NOT_FOUND_STRING, map[string]interface{}{})
+		this.ServeJSON()
+		return
+	} else if err == nil {
+
+		//开始写入密码
+		user.Ticket = GetNewTicket()
+		user.CacheUser()
+		//		models.UserCacheTicket(username, user.Ticket)
+		user.Password = password
+		o.Update(&user, "Ticket", "Password")
+		redisCache.Delete("SMSCode_" + username)
+		this.Data["json"] = restReturn(0, "密码重置成功", map[string]interface{}{
+			"username": username,
+			"ticket":   user.Ticket,
+		})
+		this.ServeJSON()
+		return
+	}
+	//	this.ServeJSON()
+}
+
+/**
+ * @api {get} /user/:username/updateRongCloudToken 刷新融云密钥
+ * @apiName userUpdateRongCloudToken
+ * @apiGroup User
+ *
+ * @apiParam {String} ticket 用户接口调用凭据
+ *
+ * @apiSuccess {String} rongCloudAppKey 融云AppKey
+ * @apiSuccess {String} rongCloudToken 融云token
+ *
+ * @apiSuccessExample Success-Response:
+ *     HTTP/1.1 200 OK
+ *     {
+ *         "errcode": 0,
+ *         "errmsg": "操作成功",
+ *         "data": {
+ *             "rongCloudAppKey": "rongCloudAppKey"
+ *             "rongCloudToken": "rongCloudToken"
+ *         }
+ *     }
+ */
+
+// @router /:username/updateRongCloudToken [get]
+func (this *UserController) UpdateRongCloudToken() {
+	rongCloudAppKey := beego.AppConfig.String("rongCloudAppKey")
+	rongCloudToken, _ := this.getRongCloudToken(this.username, "", "", true)
+	this.Data["json"] = restReturn(0, "操作成功", map[string]interface{}{
+		"rongCloudAppKey": rongCloudAppKey,
+		"rongCloudToken":  rongCloudToken,
 	})
 	this.ServeJSON()
 }
 
 /**
  * @api {get} /user/:username 查看用户信息
+ * @apiDescription 接口中的融云token如果失效，需要调用“刷新融云密钥”接口来刷新
  * @apiName userDetail
  * @apiGroup User
  *
  * @apiParam {String} ticket 用户接口调用凭据
- * @apiParam {boool=true,false} ticket 用户接口调用凭据
  *
  * @apiSuccess {String} username 用户名
  * @apiSuccess {String} rongCloudAppKey 融云AppKey
@@ -272,23 +367,13 @@ func (this *UserController) Get() {
 	}
 
 	rongCloudAppKey := beego.AppConfig.String("rongCloudAppKey")
-	rongCloudToken, _ := this.getRongCloudToken(this.username, "", "")
+	rongCloudToken, _ := this.getRongCloudToken(this.username, "", "", false)
 	this.Data["json"] = restReturn(0, "操作成功", map[string]interface{}{
-		"username":        "13590210000",
+		"username":        this.username,
 		"rongCloudAppKey": rongCloudAppKey,
 		"rongCloudToken":  rongCloudToken,
 	})
 	this.ServeJSON()
-	//	uid := u.GetString(":uid")
-	//	if uid != "" {
-	//		user, err := models.GetUser(uid)
-	//		if err != nil {
-	//			u.Data["json"] = err.Error()
-	//		} else {
-	//			u.Data["json"] = user
-	//		}
-	//	}
-	//	u.ServeJSON()
 }
 
 /**
@@ -325,20 +410,33 @@ func (this *UserController) Get() {
 
 // @router /:username [put]
 func (this *UserController) Put() {
+
+	user, err := models.GetUser(this.username)
+	log.Info(err)
+	if err == orm.ErrNoRows {
+		this.Data["json"] = restReturn(ERROR_USER_NOT_FOUND, ERROR_USER_NOT_FOUND_STRING, map[string]interface{}{})
+		this.ServeJSON()
+		return
+	}
+
+	newPassword := this.GetString("newPassword")
+	oldPassword := this.GetString("oldPassword")
+	if newPassword != "" {
+
+		if user.Password != oldPassword && false {
+			this.Data["json"] = restReturn(ERROR_USER_PASSWORD_ERROR, ERROR_USER_PASSWORD_ERROR_STRING, map[string]interface{}{})
+			this.ServeJSON()
+			return
+		} else {
+			o := orm.NewOrm()
+			user.Password = newPassword
+			o.Update(&user, "Password")
+			user.CacheUser()
+		}
+	}
+
 	this.Data["json"] = restReturn(0, "操作成功", map[string]interface{}{})
 	this.ServeJSON()
-	//	uid := u.GetString(":uid")
-	//	if uid != "" {
-	//		var user models.User
-	//		json.Unmarshal(u.Ctx.Input.RequestBody, &user)
-	//		uu, err := models.UpdateUser(uid, &user)
-	//		if err != nil {
-	//			u.Data["json"] = err.Error()
-	//		} else {
-	//			u.Data["json"] = uu
-	//		}
-	//	}
-	//	u.ServeJSON()
 }
 
 /**
@@ -399,24 +497,59 @@ func (this *UserController) Login() {
 	username := this.username
 	password := this.GetString("password")
 	if username == "" || password == "" {
-		this.Data["json"] = restReturn(20003, "用户名和密码不能为空", map[string]interface{}{})
+		this.Data["json"] = restReturn(ERROR_USER_NAME_PASSWORD_NEED, ERROR_USER_NAME_PASSWORD_NEED_STRING, map[string]interface{}{})
 		this.ServeJSON()
+		return
 	}
-	this.Data["json"] = restReturn(0, "操作成功", map[string]interface{}{
-		"username": "13590210000",
-		"ticket":   "abcdefg",
-	})
+	user, err := models.GetUser(username)
+
+	log.Info(err)
+	if err == orm.ErrNoRows {
+		this.Data["json"] = restReturn(ERROR_USER_NOT_FOUND, ERROR_USER_NOT_FOUND_STRING, map[string]interface{}{})
+		this.ServeJSON()
+		return
+	} else if err == nil {
+		if user.Password != password {
+			this.Data["json"] = restReturn(ERROR_USER_PASSWORD_ERROR, ERROR_USER_PASSWORD_ERROR_STRING, map[string]interface{}{})
+			this.ServeJSON()
+			return
+		}
+		code := this.GetString("code")
+		var openid string = ""
+		if code != "" {
+			openidCache := redisCache.Get("WechatAuthCode_" + code)
+			log.Info("WechatAuthCode_" + code)
+			if openidCache == nil {
+				this.Data["json"] = restReturn(ERROR_WECHAT_CODE_ERROR, ERROR_WECHAT_CODE_ERROR_STRING, map[string]interface{}{})
+				this.ServeJSON()
+				return
+			} else {
+				openid = GetString(openidCache)
+				models.UserCleanOpenid(openid)
+				user.Openid = openid
+			}
+			redisCache.Delete("WechatAuthCode_" + code)
+		}
+		user.Ticket = GetNewTicket()
+
+		o := orm.NewOrm()
+		if openid == "" {
+			o.Update(&user, "Ticket")
+		} else {
+			o.Update(&user, "Ticket", "Openid")
+		}
+		user.CacheUser()
+		//		models.UserCacheTicket(username, user.Ticket)
+		this.Data["json"] = restReturn(0, "登陆成功", map[string]interface{}{
+			"username": username,
+			"ticket":   user.Ticket,
+		})
+		this.ServeJSON()
+		return
+	}
+	log.Info(err)
+	this.Data["json"] = restReturn(20009, "登陆失败，请与管理员联系1", map[string]interface{}{})
 	this.ServeJSON()
-	//	username := u.GetString("username")
-	//	password := u.GetString("password")
-	//	if models.Login(username, password) {
-	//		u.Data["json"] = "login success"
-	//	} else {
-	//		u.Data["json"] = map[string]string{
-	//			"abc": "user not exist",
-	//		}
-	//	}
-	//	u.ServeJSON()
 }
 
 /**
@@ -437,6 +570,24 @@ func (this *UserController) Login() {
  */
 // @router /:username/logout [post]
 func (this *UserController) Logout() {
+
+	o := orm.NewOrm()
+	user := models.User{Username: this.username}
+	err := o.Read(&user, "Username")
+	log.Info(err)
+	if err == orm.ErrNoRows {
+		this.Data["json"] = restReturn(ERROR_USER_NOT_FOUND, ERROR_USER_NOT_FOUND_STRING, map[string]interface{}{})
+		this.ServeJSON()
+		return
+	}
+
+	user.Ticket = ""
+	user.Openid = ""
+	o.Update(&user, "Ticket", "Openid")
+	redisCache.Delete("user_" + this.username)
+	//	user.CacheUser()
+	//	models.UserCacheTicket(this.username, "")
+
 	this.Data["json"] = restReturn(0, "操作成功", map[string]interface{}{})
 	this.ServeJSON()
 }
@@ -480,9 +631,26 @@ func (this *UserController) Logout() {
 func (this *UserController) GetSMSCode() {
 	username := this.username
 	if username == "" {
-		this.Data["json"] = restReturn(20003, "用户名不能为空", map[string]interface{}{})
+		this.Data["json"] = restReturn(ERROR_USER_NAME_NEED, ERROR_USER_NAME_NEED_STRING, map[string]interface{}{})
 		this.ServeJSON()
+		return
 	}
-	this.Data["json"] = restReturn(0, "获取成功，验证码是123456[测试]", map[string]interface{}{})
+
+	o := orm.NewOrm()
+	user := models.User{Username: username}
+
+	err := o.Read(&user, "Username")
+	log.Info(err)
+	if err == orm.ErrNoRows {
+		this.Data["json"] = restReturn(ERROR_USER_NOT_FOUND, ERROR_USER_NOT_FOUND_STRING, map[string]interface{}{})
+		this.ServeJSON()
+		return
+	}
+
+	code := string(Krand(6, KC_RAND_KIND_NUM))
+
+	redisCache.Put("SMSCode_"+username, code, 30*time.Minute)
+
+	this.Data["json"] = restReturn(0, "获取成功，验证码是"+code, map[string]interface{}{})
 	this.ServeJSON()
 }

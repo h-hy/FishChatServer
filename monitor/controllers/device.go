@@ -1,30 +1,49 @@
 package controllers
 
 import (
+	"strconv"
+	//	"fmt"
 	//	"fmt"
 	//	"encoding/json"
 
 	"github.com/astaxie/beego"
-	//	"github.com/oikomi/FishChatServer/monitor/models"
+	"github.com/astaxie/beego/orm"
+	"github.com/oikomi/FishChatServer/libnet"
+	"github.com/oikomi/FishChatServer/log"
+	"github.com/oikomi/FishChatServer/monitor/models"
+	"github.com/oikomi/FishChatServer/monitor/service"
+	"github.com/oikomi/FishChatServer/protocol"
 )
 
 type DeviceController struct {
 	beego.Controller
 	username string
 	userId   string
+	m        *service.Monitor
 }
 
 func (this *DeviceController) Prepare() {
-	//	_, actionName := this.GetControllerAndAction()
 	this.Ctx.ResponseWriter.Header().Add("Access-Control-Allow-Origin", "*")
-	if true {
-		ticket := this.GetString("ticket")
-		this.username = this.GetString("username")
-		if this.username == "" || ticket == "" {
-			this.Data["json"] = restReturn(44001, "尚未登录或者登陆失效", map[string]interface{}{})
+	ticket := this.GetString("ticket")
+	this.username = this.GetString("username")
+	log.Info(string(this.Ctx.Input.RequestBody))
+	log.Info("ticket=", ticket)
+	log.Info("this.username=", this.username)
+	if models.UserCheckTicket(this.username, ticket) == false {
+		this.Data["json"] = restReturn(44001, "尚未登录或者登陆失效，请重新登陆", map[string]interface{}{})
+		this.ServeJSON()
+		return
+	}
+	_, actionName := this.GetControllerAndAction()
+	if actionName != "Post" && actionName != "Get" {
+		IMEI := this.Ctx.Input.Param(":IMEI")
+		if models.CheckBind(this.username, IMEI) == false {
+			this.Data["json"] = restReturn(ERROR_DEIVCE_NOT_BIND, ERROR_DEIVCE_NOT_BIND_STRING, map[string]interface{}{})
 			this.ServeJSON()
+			return
 		}
 	}
+	this.m = service.GetServer()
 }
 
 /**
@@ -56,24 +75,31 @@ func (this *DeviceController) Prepare() {
 // @router / [get]
 func (this *DeviceController) Get() {
 	var data []map[string]interface{}
-	data = append(data, map[string]interface{}{
-		"IMEI":           "123456789101112",
-		"nick":           "123",
-		"status":         1,
-		"work_model":     1,
-		"volume":         6,
-		"electricity":    100,
-		"emeregncyPhone": "13590210000",
-	})
-	data = append(data, map[string]interface{}{
-		"IMEI":           "12345678910555",
-		"nick":           "123",
-		"status":         1,
-		"work_model":     1,
-		"volume":         6,
-		"electricity":    100,
-		"emeregncyPhone": "13590210000",
-	})
+	user, err := models.GetUser(this.username)
+	if err != nil {
+		this.Data["json"] = restReturn(50000, "获取用户信息失败，请联系管理员", map[string]interface{}{})
+		this.ServeJSON()
+		return
+	}
+	o := orm.NewOrm()
+	_, err = o.LoadRelated(&user, "Devices")
+	if err != nil {
+		this.Data["json"] = restReturn(50000, "获取用户绑定设备失败，请联系管理员", map[string]interface{}{})
+		this.ServeJSON()
+		return
+	}
+
+	for _, device := range user.Devices {
+		data = append(data, map[string]interface{}{
+			"IMEI":           device.IMEI,
+			"nick":           device.Nick,
+			"status":         device.Alive,
+			"work_model":     device.Work_model,
+			"volume":         device.Volume,
+			"electricity":    device.Energy,
+			"emeregncyPhone": device.EmergencyPhone,
+		})
+	}
 	this.Data["json"] = restReturn(0, "操作成功", data)
 	this.ServeJSON()
 }
@@ -107,14 +133,24 @@ func (this *DeviceController) Get() {
 // @router /:IMEI [get]
 func (this *DeviceController) Show() {
 	IMEI := this.Ctx.Input.Param(":IMEI")
+	o := orm.NewOrm()
+	device := models.Device{IMEI: IMEI}
+
+	err := o.Read(&device, "IMEI")
+	if err == orm.ErrNoRows {
+		this.Data["json"] = restReturn(ERROR_DEIVCE_NOT_EXIST, ERROR_DEIVCE_NOT_EXIST_STRING, map[string]interface{}{})
+		this.ServeJSON()
+		return
+	}
+
 	this.Data["json"] = restReturn(0, "操作成功", map[string]interface{}{
-		"IMEI":           IMEI,
-		"nick":           "123",
-		"status":         1,
-		"work_model":     1,
-		"volume":         6,
-		"electricity":    100,
-		"emeregncyPhone": "13590210000",
+		"IMEI":           device.IMEI,
+		"nick":           device.Nick,
+		"status":         device.Alive,
+		"work_model":     device.Work_model,
+		"volume":         device.Volume,
+		"electricity":    device.Energy,
+		"emeregncyPhone": device.EmergencyPhone,
 	})
 	this.ServeJSON()
 }
@@ -151,25 +187,67 @@ func (this *DeviceController) Show() {
 
 // @router / [post]
 func (this *DeviceController) Post() {
-	this.Data["json"] = restReturn(0, "操作成功", map[string]interface{}{
-		"IMEI":           "123456789101112",
-		"nick":           "123",
-		"status":         1,
-		"work_model":     1,
-		"volume":         6,
-		"electricity":    100,
-		"emeregncyPhone": "13590210000",
-	})
+
+	IMEI := this.GetString("IMEI")
+	//检查是否已经绑定
+	hadBind := models.CheckBind(this.username, IMEI)
+	log.Info("hadBind=", hadBind)
+	if hadBind == true {
+		this.Data["json"] = restReturn(ERROR_DEIVCE_BINDED, ERROR_DEIVCE_BINDED_STRING, map[string]interface{}{})
+		this.ServeJSON()
+		return
+	}
+
+	//获取设备对象
+	o := orm.NewOrm()
+	device := models.Device{IMEI: IMEI}
+
+	err := o.Read(&device, "IMEI")
+	if err == orm.ErrNoRows {
+		this.Data["json"] = restReturn(ERROR_DEIVCE_NOT_EXIST, ERROR_DEIVCE_NOT_EXIST_STRING, map[string]interface{}{})
+		this.ServeJSON()
+		return
+	} else if err != nil {
+		this.Data["json"] = restReturn(50000, "获取设备信息失败，请联系管理员", map[string]interface{}{})
+		this.ServeJSON()
+		return
+	}
+	//获取用户对象
+
+	user, err := models.GetUser(this.username)
+	if err != nil {
+		this.Data["json"] = restReturn(50000, "获取用户信息失败，请联系管理员", map[string]interface{}{})
+		this.ServeJSON()
+		return
+	}
+	//开始绑定
+	m2m := o.QueryM2M(&user, "Devices")
+
+	_, err = m2m.Add(device)
+	if err == nil {
+		user.Devices = append(user.Devices, &device)
+		user.CacheUser()
+		this.Data["json"] = restReturn(0, "操作成功", map[string]interface{}{
+			"IMEI":           device.IMEI,
+			"nick":           device.Nick,
+			"status":         device.Alive,
+			"work_model":     device.Work_model,
+			"volume":         device.Volume,
+			"electricity":    device.Energy,
+			"emeregncyPhone": device.EmergencyPhone,
+		})
+		this.ServeJSON()
+	}
+	this.Data["json"] = restReturn(50000, "绑定失败，请联系管理员", map[string]interface{}{})
 	this.ServeJSON()
 }
 
 /**
- * @api {delete} /device/:IMEI 用户删除绑定设备
+ * @api {delete} /device/:IMEI?username=:user&ticket=:ticket 用户删除绑定设备
+ * @apiDescription 特别说明：根据HTTP标准，DELETE方法的身份认证参数务必放在url中而不能放在body中。
  * @apiName deviceDestory
  * @apiGroup Device
  *
- * @apiParam {String} username 用户名
- * @apiParam {String} ticket 用户接口调用凭据
  *
  * @apiSuccessExample Success-Response:
  *     HTTP/1.1 200 OK
@@ -184,8 +262,54 @@ func (this *DeviceController) Post() {
 // @router /:IMEI [delete]
 func (this *DeviceController) Delete() {
 	IMEI := this.Ctx.Input.Param(":IMEI")
-	this.Data["json"] = restReturn(0, "Delete操作成功"+IMEI, map[string]interface{}{})
+
+	user, err := models.GetUser(this.username)
+	if err != nil {
+		this.Data["json"] = restReturn(50000, "获取用户信息失败，请联系管理员", map[string]interface{}{})
+		this.ServeJSON()
+		return
+	}
+
+	for index, device := range user.Devices {
+		if device.IMEI == IMEI {
+			newDevices := make([]*models.Device, len(user.Devices)-1)
+			copy(newDevices[0:], user.Devices[:index])
+			copy(newDevices[index:], user.Devices[index+1:])
+			user.Devices = newDevices
+			o := orm.NewOrm()
+			m2m := o.QueryM2M(&user, "Devices")
+			m2m.Remove(device)
+			user.CacheUser()
+			this.Data["json"] = restReturn(0, "操作成功", map[string]interface{}{})
+			this.ServeJSON()
+			return
+		}
+	}
+	this.Data["json"] = restReturn(50000, "操作失败，请联系管理员", map[string]interface{}{})
 	this.ServeJSON()
+}
+func (this *DeviceController) sendToDevice(IMEI, cmdName string, Arg1 ...string) {
+
+	sessionCacheData, _ := getCache(this.m, IMEI)
+	log.Info(sessionCacheData)
+	if sessionCacheData != nil {
+		if sessionCacheData.MsgServerAddr != "" &&
+			this.m.MsgServerClientMap[sessionCacheData.MsgServerAddr] != nil {
+			log.Info("ok")
+			cmd := protocol.NewCmdSimple(protocol.ACTION_TRANSFER_TO_DEVICE)
+			cmd.Infos["cmdName"] = cmdName
+			if len(Arg1) > 0 {
+				cmd.AddArg(Arg1[0])
+
+			}
+			cmd.Infos["IMEI"] = IMEI
+			cmd.Infos["ConnectServerUUID"] = sessionCacheData.ConnectServerUUID
+			err := this.m.MsgServerClientMap[sessionCacheData.MsgServerAddr].Session.Send(libnet.Json(cmd))
+			if err != nil {
+				log.Error(err.Error())
+			}
+		}
+	}
 }
 
 /**
@@ -221,7 +345,32 @@ func (this *DeviceController) Delete() {
 // @router /:IMEI [put]
 func (this *DeviceController) Put() {
 	IMEI := this.Ctx.Input.Param(":IMEI")
-	this.Data["json"] = restReturn(0, "Put操作成功"+IMEI, map[string]interface{}{})
+	volume := this.GetString("volume")
+	nick := this.GetString("nick")
+	work_model := this.GetString("work_model")
+	//	emeregncyPhone := this.GetString("emeregncyPhone")
+	var updateColumn []string
+	o := orm.NewOrm()
+	device := models.Device{IMEI: IMEI}
+
+	if nick != "" {
+		updateColumn = append(updateColumn, "Nick")
+		device.Nick = nick
+	}
+	if volume != "" {
+		this.sendToDevice(IMEI, "D"+protocol.DEIVCE_VOLUME_LEVER, volume)
+		updateColumn = append(updateColumn, "Volume")
+		device.Volume, _ = strconv.Atoi(volume)
+	}
+	if work_model != "" {
+		this.sendToDevice(IMEI, "D"+protocol.DEIVCE_WORK_MODEL_CMD, work_model)
+		updateColumn = append(updateColumn, "Work_model")
+		device.Work_model, _ = strconv.Atoi(work_model)
+	}
+	if len(updateColumn) > 0 {
+		o.Update(&device, updateColumn...)
+	}
+	this.Data["json"] = restReturn(0, "操作成功", map[string]interface{}{})
 	this.ServeJSON()
 }
 
@@ -249,7 +398,8 @@ func (this *DeviceController) Put() {
 // @router /:IMEI/action/location [post]
 func (this *DeviceController) PostActionLocation() {
 	IMEI := this.Ctx.Input.Param(":IMEI")
-	this.Data["json"] = restReturn(0, "操作成功设备实时定位"+IMEI, map[string]interface{}{
+	this.sendToDevice(IMEI, "D"+protocol.DEIVCE_LOCATON_CMD)
+	this.Data["json"] = restReturn(0, "操作成功", map[string]interface{}{
 		"messageId": 123,
 	})
 	this.ServeJSON()
@@ -278,6 +428,7 @@ func (this *DeviceController) PostActionLocation() {
 // @router /:IMEI/action/shutdown [post]
 func (this *DeviceController) PostActionShutdown() {
 	IMEI := this.Ctx.Input.Param(":IMEI")
+	this.sendToDevice(IMEI, "D"+protocol.DEIVCE_SHUTDOWN_CMD)
 	this.Data["json"] = restReturn(0, "操作成功设备关机"+IMEI, map[string]interface{}{
 		"messageId": 123,
 	})

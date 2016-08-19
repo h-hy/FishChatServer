@@ -92,6 +92,13 @@ func init() {
 
 	beego.GlobalControllerRouter["github.com/oikomi/FishChatServer/monitor/controllers:UserController"] = append(beego.GlobalControllerRouter["github.com/oikomi/FishChatServer/monitor/controllers:UserController"],
 		beego.ControllerComments{
+			"UpdateRongCloudToken",
+			`/:username/updateRongCloudToken`,
+			[]string{"get"},
+			nil})
+
+	beego.GlobalControllerRouter["github.com/oikomi/FishChatServer/monitor/controllers:UserController"] = append(beego.GlobalControllerRouter["github.com/oikomi/FishChatServer/monitor/controllers:UserController"],
+		beego.ControllerComments{
 			"Get",
 			`/:username`,
 			[]string{"get"},

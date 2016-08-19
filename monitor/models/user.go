@@ -1,86 +1,143 @@
 package models
 
 import (
-	"errors"
-	"strconv"
+	"encoding/json"
+	"math/rand"
 	"time"
-)
 
-var (
-	UserList map[string]*User
+	"github.com/astaxie/beego/orm"
+	"github.com/oikomi/FishChatServer/log"
 )
-
-func init() {
-	UserList = make(map[string]*User)
-	u := User{"user_11111", "astaxie", "11111", Profile{"male", 20, "Singapore", "astaxie@gmail.com"}}
-	UserList["user_11111"] = &u
-}
 
 type User struct {
-	Id       string
-	Username string
-	Password string
-	Profile  Profile
+	Id        int `orm:"auto;pk;column(id)"`
+	Username  string
+	Password  string
+	Telephone string
+	Ticket    string
+	Openid    string
+	Devices   []*Device `orm:"rel(m2m);rel_through(github.com/oikomi/FishChatServer/monitor/models.UserDevice)"`
 }
 
-type Profile struct {
-	Gender  string
-	Age     int
-	Address string
-	Email   string
-}
+//func (u *User) TableName() string {
+//	return "users"
+//}
 
-func AddUser(u User) string {
-	u.Id = "user_" + strconv.FormatInt(time.Now().UnixNano(), 10)
-	UserList[u.Id] = &u
-	return u.Id
-}
+func UserRegist(username, telephone, password, openid string) (int, string, map[string]interface{}) {
 
-func GetUser(uid string) (u *User, err error) {
-	if u, ok := UserList[uid]; ok {
-		return u, nil
+	o := orm.NewOrm()
+	user := User{Username: username}
+
+	err := o.Read(&user, "Username")
+	log.Info(err)
+	if err == nil {
+		return 20002, "用户名已经存在", map[string]interface{}{}
+	} else if err == orm.ErrNoRows {
+		newTicket := GetNewTicket()
+		var newUser User
+		newUser.Username = username
+		newUser.Telephone = username
+		newUser.Ticket = newTicket
+		newUser.Password = password
+		newUser.Openid = openid
+
+		_, err := o.Insert(&newUser)
+		if err == nil {
+			newUser.CacheUser()
+			return 0, "注册成功", map[string]interface{}{
+				"username": username,
+				"ticket":   newTicket,
+			}
+		}
+		log.Info(err)
 	}
-	return nil, errors.New("User not exists")
+	return 20006, "注册失败，请与管理员联系", map[string]interface{}{}
 }
-
-func GetAllUsers() map[string]*User {
-	return UserList
-}
-
-func UpdateUser(uid string, uu *User) (a *User, err error) {
-	if u, ok := UserList[uid]; ok {
-		if uu.Username != "" {
-			u.Username = uu.Username
-		}
-		if uu.Password != "" {
-			u.Password = uu.Password
-		}
-		if uu.Profile.Age != 0 {
-			u.Profile.Age = uu.Profile.Age
-		}
-		if uu.Profile.Address != "" {
-			u.Profile.Address = uu.Profile.Address
-		}
-		if uu.Profile.Gender != "" {
-			u.Profile.Gender = uu.Profile.Gender
-		}
-		if uu.Profile.Email != "" {
-			u.Profile.Email = uu.Profile.Email
-		}
-		return u, nil
+func (u *User) CacheUser() {
+	log.Info("CacheUser")
+	body, err := json.Marshal(u)
+	log.Info(err)
+	if err == nil {
+		redisCache.Put("user_"+u.Username, body, 30*time.Minute)
 	}
-	return nil, errors.New("User Not Exist")
 }
 
-func Login(username, password string) bool {
-	for _, u := range UserList {
-		if u.Username == username && u.Password == password {
-			return true
+func (u *User) updateDevice() {
+	o := orm.NewOrm()
+	o.LoadRelated(u, "Devices")
+	u.CacheUser()
+}
+func UserCleanOpenid(openid string) {
+	o := orm.NewOrm()
+	o.QueryTable("user").Filter("openid", openid).Update(orm.Params{
+		"openid": "",
+	})
+}
+func GetUser(username string) (User, error) {
+	user := redisCache.Get("user_" + username)
+	if user == nil {
+		//缓存没有，从数据库读取
+		o := orm.NewOrm()
+		user := User{Username: username}
+
+		err := o.Read(&user, "Username")
+		log.Info(err)
+		if err == nil {
+			_, err = o.LoadRelated(&user, "Devices")
+			if err != nil {
+				log.Info(err)
+				return user, err
+			}
+			user.CacheUser()
 		}
+		return user, err
+	} else {
+		userString := GetString(user)
+		var user User
+		err := json.Unmarshal([]byte(userString), &user)
+		return user, err
 	}
-	return false
+}
+func UserCheckTicket(username, ticket string) bool {
+	log.Info(ticket)
+	if ticket == "" {
+		return false
+	}
+	user, err := GetUser(username)
+	log.Info(user)
+	log.Info(ticket)
+	if err == nil {
+		return user.Ticket == ticket && user.Ticket != ""
+	} else {
+		return false
+	}
 }
 
-func DeleteUser(uid string) {
-	delete(UserList, uid)
+const (
+	KC_RAND_KIND_NUM   = 0 // 纯数字
+	KC_RAND_KIND_LOWER = 1 // 小写字母
+	KC_RAND_KIND_UPPER = 2 // 大写字母
+	KC_RAND_KIND_ALL   = 3 // 数字、大小写字母
+)
+
+func GetNewTicket() string {
+	return string(Krand(32, KC_RAND_KIND_LOWER))
+}
+
+func Krand(size int, kind int) []byte {
+	ikind, kinds, result := kind, [][]int{[]int{10, 48}, []int{26, 97}, []int{26, 65}}, make([]byte, size)
+	is_all := kind > 2 || kind < 0
+	rand.Seed(time.Now().UnixNano())
+	for i := 0; i < size; i++ {
+		if is_all { // random ikind
+			ikind = rand.Intn(3)
+		}
+		scope, base := kinds[ikind][0], kinds[ikind][1]
+		result[i] = uint8(base + rand.Intn(scope))
+	}
+	return result
+}
+
+func init() {
+	orm.RegisterModel(new(User))
 }

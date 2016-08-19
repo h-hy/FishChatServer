@@ -36,32 +36,36 @@ const (
 const (
 	//SEND_PING
 	SEND_PING_CMD = "PING"
-	PING_CMD_ACK = "PING_ACK"
+	PING_CMD_ACK  = "PING_ACK"
 
 	//ACTION
 	ACTION_SELECT_MSG_SERVER_CMD = "ACTION_SELECT_MSG_SERVER"
-	ACTION_GO_OFFLINE_CMD = "ACTION_GO_OFFLINE"
+	ACTION_GO_OFFLINE_CMD        = "ACTION_GO_OFFLINE"
+
+	ACTION_TRANSFER_TO_DEVICE = "TRANSFER_TO_DEVICE"
 
 	ACTION_DO_CLOSE_SESSION_CMD = "ACTION_DO_CLOSE_SESSION"
 
 	REQ_LOGIN_CMD = "REQ_LOGIN"
 	RSP_LOGIN_CMD = "RSP_LOGIN"
-// emergency.
-	DEIVCE_HEARTBEAT_CMD = "1"			//心跳包（上行）
-	DEIVCE_WORK_MODEL_CMD = "2"			//工作模式（下行）
-	DEIVCE_EMERGENCY_PHONE_CMD = "9"	//紧急呼叫号码（下行）
-	DEIVCE_TIME_SYNC_CMD = "13"			//时间同步(上行)
-	DEIVCE_ALARM_SET_CMD = "14"			//闹钟设置（下行）
-	DEIVCE_LOCATON_CMD = "15"			//定位数据（上行）
-	DEIVCE_LOCATON_MANUL_CMD = "17"		//手动定位（下行）
-	DEIVCE_SHUTDOWN_CMD = "32"			//远程关机（下行）
-	DEIVCE_UPDATE_SETTING_CMD = "33"	//更新下行设置（上行）
-	DEIVCE_VOICE_DOWN_CMD = "35"		//语音文件下行
-	DEIVCE_VOICE_UP_CMD = "36"			//语音文件上行
-	DEIVCE_LINK_DESC_CMD = "38"			//连接用途请求通知（上行）
-	DEIVCE_VOICE_READED_CMD = "39"   	//阅读过的语音码文件反馈通知（上行）
-	DEIVCE_LOW_POWER_CMD = "40"			//低电通知（上行）
-	DEIVCE_SOS_CMD = "41"				//紧急呼叫（上行）
+	// emergency.
+	DEIVCE_HEARTBEAT_CMD       = "1"  //心跳包（上行）
+	DEIVCE_WORK_MODEL_CMD      = "2"  //工作模式（下行）
+	DEIVCE_EMERGENCY_PHONE_CMD = "9"  //紧急呼叫号码（下行）
+	DEIVCE_TIME_SYNC_CMD       = "13" //时间同步(上行)
+	DEIVCE_ALARM_SET_CMD       = "14" //闹钟设置（下行）
+	DEIVCE_LOCATON_CMD         = "15" //定位数据（上行）
+	DEIVCE_LOCATON_MANUL_CMD   = "17" //手动定位（下行）
+	DEIVCE_VOLUME_LEVER        = "29" //音量等级设置（下行）
+	DEIVCE_SHUTDOWN_CMD        = "32" //远程关机（下行）
+	DEIVCE_UPDATE_SETTING_CMD  = "33" //更新下行设置（上行）
+	DEIVCE_VOICE_DOWN_CMD      = "35" //语音文件下行
+	DEIVCE_VOICE_UP_CMD        = "36" //语音文件上行
+	DEIVCE_LINK_DESC_CMD       = "38" //连接用途请求通知（上行）
+	DEIVCE_VOICE_READED_CMD    = "39" //阅读过的语音码文件反馈通知（上行）
+	DEIVCE_LOW_POWER_CMD       = "40" //低电通知（上行）
+	DEIVCE_SOS_CMD             = "41" //紧急呼叫（上行）
+
 	/*
 	         device/client -> gateway
 	   		REQ_LOGIN_CMD
@@ -301,7 +305,7 @@ const (
 	//SEND_CLIENT_ID_FOR_TOPIC ID
 	SEND_CLIENT_ID_FOR_TOPIC_CMD = "SEND_CLIENT_ID_FOR_TOPIC"
 	//SUBSCRIBE_CHANNEL channelName
-	SUBSCRIBE_CHANNEL_CMD = "SUBSCRIBE_CHANNEL"
+	SUBSCRIBE_CHANNEL_CMD     = "SUBSCRIBE_CHANNEL"
 	SUBSCRIBE_CHANNEL_CMD_ACK = "SUBSCRIBE_CHANNEL_ACK"
 	//SEND_MESSAGE_P2P send2ID send2msg
 	SEND_MESSAGE_P2P_CMD = "SEND_MESSAGE_P2P"
@@ -360,10 +364,10 @@ func (self *CmdSimple) GetCmdName() string {
 	return self.CmdName
 }
 
-func (self *CmdSimple) GetDatas() string{
-	resp := "JHD1{<"+self.GetCmdName()+"#"
+func (self *CmdSimple) GetDatas() string {
+	resp := "JHD1{<" + self.GetCmdName() + "#"
 	for i := 0; i < len(self.Args); i++ {
-		resp+=self.Args[i]+"#"
+		resp += self.Args[i] + "#"
 	}
 	resp += ">}\r\n"
 	return resp

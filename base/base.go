@@ -30,8 +30,17 @@ const COMM_PREFIX = "IM"
 var ChannleList []string
 
 func init() {
-	ChannleList = []string{protocol.SYSCTRL_CLIENT_STATUS, protocol.SYSCTRL_TOPIC_STATUS, protocol.SYSCTRL_TOPIC_SYNC,
-		protocol.SYSCTRL_SEND, protocol.SYSCTRL_MONITOR, protocol.STORE_CLIENT_INFO, protocol.STORE_TOPIC_INFO, protocol.SYSCTRL_CONNECT_SERVER}
+	ChannleList = []string{
+		protocol.SYSCTRL_CLIENT_STATUS,
+		protocol.SYSCTRL_TOPIC_STATUS,
+		protocol.SYSCTRL_TOPIC_SYNC,
+		protocol.SYSCTRL_SEND,
+		protocol.SYSCTRL_MONITOR,
+		protocol.STORE_CLIENT_INFO,
+		protocol.STORE_TOPIC_INFO,
+		protocol.SYSCTRL_CONNECT_SERVER,
+		protocol.SYSCTRL_API_SERVER,
+	}
 }
 
 type ChannelState struct {
@@ -52,7 +61,7 @@ type SessionState struct {
 	ClientID   string
 	Alive      bool
 	ClientType string
-	Devices map[string]string
+	Devices    map[string]string
 }
 
 func NewSessionState(alive bool, cid string, clienttype string) *SessionState {
@@ -60,7 +69,7 @@ func NewSessionState(alive bool, cid string, clienttype string) *SessionState {
 		ClientID:   cid,
 		Alive:      alive,
 		ClientType: clienttype,
-		Devices: make(map[string]string),
+		Devices:    make(map[string]string),
 	}
 }
 

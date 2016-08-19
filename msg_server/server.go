@@ -152,20 +152,20 @@ func (self *MsgServer) procOffline(ID string) {
 		}
 		sessionCacheData.Alive = false
 		self.sessionCache.Set(sessionCacheData)
-		for _, topicName := range sessionCacheData.TopicList {
-			topicCacheData, _ := self.topicCache.Get(topicName)
-			if topicCacheData != nil {
-				// update AliveMemberNumMap[server]
-				if v, ok := topicCacheData.AliveMemberNumMap[self.cfg.LocalIP]; ok {
-					if v > 0 {
-						topicCacheData.AliveMemberNumMap[self.cfg.LocalIP] = v - 1
-					} else {
-						topicCacheData.AliveMemberNumMap[self.cfg.LocalIP] = 0
-					}
-					self.topicCache.Set(topicCacheData)
-				}
-			}
-		}
+		//		for _, topicName := range sessionCacheData.TopicList {
+		//			topicCacheData, _ := self.topicCache.Get(topicName)
+		//			if topicCacheData != nil {
+		//				// update AliveMemberNumMap[server]
+		//				if v, ok := topicCacheData.AliveMemberNumMap[self.cfg.LocalIP]; ok {
+		//					if v > 0 {
+		//						topicCacheData.AliveMemberNumMap[self.cfg.LocalIP] = v - 1
+		//					} else {
+		//						topicCacheData.AliveMemberNumMap[self.cfg.LocalIP] = 0
+		//					}
+		//					self.topicCache.Set(topicCacheData)
+		//				}
+		//			}
+		//		}
 	}
 }
 
@@ -190,80 +190,83 @@ func (self *MsgServer) parseProtocol(cmd []byte, session *libnet.Session) error 
 	log.Info(c)
 
 	switch c.GetCmdName() {
-		case protocol.SEND_PING_CMD:		//接入服务器心跳请求
-			err = pp.procPing(&c, session)
-			if err != nil {
-				log.Error("error:", err)
-				return err
-			}
-		case protocol.SUBSCRIBE_CHANNEL_CMD: 	//订阅通道
-			err = pp.procSubscribeChannel(&c, session)
-			if err != nil {
-				log.Error("error:", err)
-				return err
-			}
+	case protocol.SEND_PING_CMD: //接入服务器心跳请求
+		err = pp.procPing(&c, session)
+		if err != nil {
+			log.Error("error:", err)
+			return err
+		}
+	case protocol.SUBSCRIBE_CHANNEL_CMD: //订阅通道
+		err = pp.procSubscribeChannel(&c, session)
+		if err != nil {
+			log.Error("error:", err)
+			return err
+		}
 
-		case protocol.ACTION_GO_OFFLINE_CMD:	//终端下线通知
-			err = pp.procGoOffLine(&c, session)
-			if err != nil {
-				log.Error("error:", err)
-				return err
-			}
+	case protocol.ACTION_GO_OFFLINE_CMD: //终端下线通知
+		err = pp.procGoOffLine(&c, session)
+		if err != nil {
+			log.Error("error:", err)
+			return err
+		}
 
-		case protocol.ACTION_SELECT_MSG_SERVER_CMD: //终端切换消息服务器通知
-			err = pp.procSelectMsgServer(&c, session)
-			if err != nil {
-				log.Error("error:", err)
-				return err
-			}
+	case protocol.ACTION_SELECT_MSG_SERVER_CMD: //终端切换消息服务器通知
+		err = pp.procSelectMsgServer(&c, session)
+		if err != nil {
+			log.Error("error:", err)
+			return err
+		}
 
-		case "U"+protocol.DEIVCE_HEARTBEAT_CMD:			//心跳包（上行）
-			err = pp.prochHeartbeat(&c, session)
-			if err != nil {
-				return err
-			}
-		case "U"+protocol.DEIVCE_TIME_SYNC_CMD:			//时间同步（上行）
-			err = pp.prochTimeSync(&c, session)
-			if err != nil {
-				return err
-			}
-		case "U"+protocol.DEIVCE_LOCATON_CMD:			//定位数据（上行）
-			err = pp.prochLocation(&c, session)
-			if err != nil {
-				return err
-			}
-		case "U"+protocol.DEIVCE_LINK_DESC_CMD:			//连接用途请求通知（上行）
-			err = pp.prochLinkDesc(&c, session)
-			if err != nil {
-				return err
-			}
-		case "U"+protocol.DEIVCE_VOICE_READED_CMD:			//连接用途请求通知（上行）
-			err = pp.prochVoiceReaded(&c, session)
-			if err != nil {
-				return err
-			}
-		case "U"+protocol.DEIVCE_LOW_POWER_CMD:			//连接用途请求通知（上行）
-			err = pp.prochLowPower(&c, session)
-			if err != nil {
-				return err
-			}
-		case "U"+protocol.DEIVCE_UPDATE_SETTING_CMD:			//连接用途请求通知（上行）
-			err = pp.prochupdateSetting(&c, session)
-			if err != nil {
-				return err
-			}
-		case "U"+protocol.DEIVCE_SOS_CMD:			//连接用途请求通知（上行）
-			err = pp.prochSOS(&c, session)
-			if err != nil {
-				return err
-			}
+	case "U" + protocol.DEIVCE_HEARTBEAT_CMD: //心跳包（上行）
+		err = pp.prochHeartbeat(&c, session)
+		if err != nil {
+			return err
+		}
+	case "U" + protocol.DEIVCE_TIME_SYNC_CMD: //时间同步（上行）
+		err = pp.prochTimeSync(&c, session)
+		if err != nil {
+			return err
+		}
+	case "U" + protocol.DEIVCE_LOCATON_CMD: //定位数据（上行）
+		err = pp.prochLocation(&c, session)
+		if err != nil {
+			return err
+		}
+	case "U" + protocol.DEIVCE_LINK_DESC_CMD: //连接用途请求通知（上行）
+		err = pp.prochLinkDesc(&c, session)
+		if err != nil {
+			return err
+		}
+	case "U" + protocol.DEIVCE_VOICE_READED_CMD: //连接用途请求通知（上行）
+		err = pp.prochVoiceReaded(&c, session)
+		if err != nil {
+			return err
+		}
+	case "U" + protocol.DEIVCE_LOW_POWER_CMD: //连接用途请求通知（上行）
+		err = pp.prochLowPower(&c, session)
+		if err != nil {
+			return err
+		}
+	case "U" + protocol.DEIVCE_UPDATE_SETTING_CMD: //连接用途请求通知（上行）
+		err = pp.prochupdateSetting(&c, session)
+		if err != nil {
+			return err
+		}
+	case "U" + protocol.DEIVCE_SOS_CMD: //连接用途请求通知（上行）
+		err = pp.prochSOS(&c, session)
+		if err != nil {
+			return err
+		}
+	case protocol.ACTION_TRANSFER_TO_DEVICE: //转发指令到设备
+		err = pp.prochTransferToDevice(&c, session)
+		if err != nil {
+			return err
+		}
 		// case "U"+protocol.DEIVCE_VOICE_UP_CMD:	//语音文件上行
 		// 	err = pp.prochVoiceUp(&c, session)
 		// 	if err != nil {
 		// 		return err
 		// 	}
-
-
 
 		// case protocol.REQ_LOGOUT_CMD:
 		// 	err = pp.procLogout(&c, session)

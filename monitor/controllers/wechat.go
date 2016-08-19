@@ -3,12 +3,15 @@ package controllers
 import (
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/astaxie/beego"
+	"github.com/astaxie/beego/orm"
 	"github.com/chanxuehong/rand"
 	"github.com/chanxuehong/wechat.v2/mp/core"
 	mpoauth2 "github.com/chanxuehong/wechat.v2/mp/oauth2"
 	"github.com/chanxuehong/wechat.v2/oauth2"
+	"github.com/oikomi/FishChatServer/monitor/models"
 )
 
 type WechatController struct {
@@ -92,17 +95,34 @@ func (this *WechatController) AuthorizeRedirect() {
 	log.Printf("token: %+v\r\n", token)
 
 	//从微信拉去授权信息
-	userinfo, err := mpoauth2.GetUserInfo(token.AccessToken, token.OpenId, "", nil)
+	//	userinfo, err := mpoauth2.GetUserInfo(token.AccessToken, token.OpenId, "", nil)
 
-	log.Printf("userinfo:", userinfo)
+	//	log.Printf("userinfo:", userinfo)
 
-	//准备跳转回到APP
-	wechatAuthorizeCode := string(rand.NewHex())
-	username := "13590211111"
-	ticket := "1234"
-	appRedirectUri := redirectUri.(string) + "&code=" + wechatAuthorizeCode +
-		"&username=" + username +
-		"&isLogined=true" +
-		"&ticket=" + ticket
-	this.Ctx.Redirect(302, appRedirectUri)
+	wechatAuthorizeCode := string(Krand(32, KC_RAND_KIND_LOWER))
+	err = redisCache.Put("WechatAuthCode_"+wechatAuthorizeCode, token.OpenId, 30*time.Minute)
+
+	log.Println(err)
+	o := orm.NewOrm()
+
+	user := models.User{Openid: token.OpenId}
+
+	err = o.Read(&user, "Openid")
+	if err == orm.ErrNoRows {
+		appRedirectUri := redirectUri.(string) + "&code=" + wechatAuthorizeCode +
+			"&isLogined=false"
+		this.Ctx.Redirect(302, appRedirectUri)
+	} else if err == nil {
+		user.Ticket = GetNewTicket()
+		o.Update(&user, "Ticket")
+		appRedirectUri := redirectUri.(string) + "&code=" + wechatAuthorizeCode +
+			"&username=" + user.Username +
+			"&isLogined=true" +
+			"&ticket=" + user.Ticket
+		this.Ctx.Redirect(302, appRedirectUri)
+	} else {
+		this.Data["json"] = restReturn(44002, "用户授权失败，请与管理员联系", map[string]interface{}{})
+		this.ServeJSON()
+	}
+
 }
