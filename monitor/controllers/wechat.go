@@ -115,6 +115,8 @@ func (this *WechatController) AuthorizeRedirect() {
 	} else if err == nil {
 		user.Ticket = GetNewTicket()
 		o.Update(&user, "Ticket")
+		user.UpdateDevice()
+		user.CacheUser()
 		appRedirectUri := redirectUri.(string) + "&code=" + wechatAuthorizeCode +
 			"&username=" + user.Username +
 			"&isLogined=true" +

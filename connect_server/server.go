@@ -18,9 +18,11 @@ package main
 import (
 	// "encoding/json"
 	"bytes"
+	"encoding/base64"
 	"errors"
 	"flag"
 	"fmt"
+	"strconv"
 	"sync"
 	"time"
 
@@ -175,8 +177,17 @@ func (self *ConnectServer) parseProtocol(cmd []byte, session *connect_libnet.Ses
 	c.CmdName = string(cmd[nowindex+1 : nowindex+index])
 	nowindex += index + 1
 	//命令编码提取完毕
+	fmt.Printf("c.CmdName=%s\n", c.CmdName)
 	// fmt.Printf("nowindex=%d,last_index=%d\n",nowindex,last_index)
 	for {
+		if c.CmdName == "U"+protocol.DEIVCE_VOICE_UP_CMD && len(c.Args) == 5 && c.Args[2] == "1" {
+			size, err := strconv.Atoi(c.Args[4])
+			if err != nil {
+				return errors.New("size error:" + c.Args[4])
+			}
+			c.Args = append(c.Args, base64.StdEncoding.EncodeToString(cmd[nowindex:nowindex+size]))
+			break
+		}
 		index = bytes.Index(cmd[nowindex:], data_spilt)
 		if index == -1 {
 			if nowindex != last_index {

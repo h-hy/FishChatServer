@@ -17,6 +17,7 @@ type User struct {
 	Ticket    string
 	Openid    string
 	Devices   []*Device `orm:"rel(m2m);rel_through(github.com/oikomi/FishChatServer/monitor/models.UserDevice)"`
+	isCache   bool      `orm:"-;default(false)"`
 }
 
 //func (u *User) TableName() string {
@@ -62,7 +63,7 @@ func (u *User) CacheUser() {
 	}
 }
 
-func (u *User) updateDevice() {
+func (u *User) UpdateDevice() {
 	o := orm.NewOrm()
 	o.LoadRelated(u, "Devices")
 	u.CacheUser()
@@ -88,6 +89,7 @@ func GetUser(username string) (User, error) {
 				log.Info(err)
 				return user, err
 			}
+			user.isCache = false
 			user.CacheUser()
 		}
 		return user, err
@@ -95,23 +97,49 @@ func GetUser(username string) (User, error) {
 		userString := GetString(user)
 		var user User
 		err := json.Unmarshal([]byte(userString), &user)
+		user.isCache = true
 		return user, err
 	}
 }
-func UserCheckTicket(username, ticket string) bool {
-	log.Info(ticket)
-	if ticket == "" {
-		return false
-	}
-	user, err := GetUser(username)
-	log.Info(user)
-	log.Info(ticket)
-	if err == nil {
-		return user.Ticket == ticket && user.Ticket != ""
-	} else {
-		return false
-	}
+func (u *User) CheckTicket(ticket string) bool {
+	return u.Ticket == ticket && u.Ticket != ""
 }
+func (u *User) CheckBind(IMEI string) bool {
+
+	for _, device := range u.Devices {
+		if device.IMEI == IMEI {
+			return true
+		}
+	}
+	if u.isCache == true {
+		//重新获取一次试试
+		//		redisCache.Delete("user_" + username)
+		u.UpdateDevice()
+		log.Info(IMEI)
+		for _, device := range u.Devices {
+			log.Info(device.IMEI)
+			if device.IMEI == IMEI {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+//func UserCheckTicket(username, ticket string) bool {
+//	log.Info(ticket)
+//	if ticket == "" {
+//		return false
+//	}
+//	user, err := GetUser(username)
+//	log.Info(user)
+//	log.Info(ticket)
+//	if err == nil {
+//		return user.Ticket == ticket && user.Ticket != ""
+//	} else {
+//		return false
+//	}
+//}
 
 const (
 	KC_RAND_KIND_NUM   = 0 // 纯数字

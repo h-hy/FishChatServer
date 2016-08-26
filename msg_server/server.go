@@ -42,6 +42,7 @@ type MsgServer struct {
 	channels         base.ChannelMap
 	topics           protocol.TopicMap
 	server           *libnet.Server
+	voiceCache       *redis_store.VoiceCache
 	sessionCache     *redis_store.SessionCache
 	topicCache       *redis_store.TopicCache
 	offlineMsgCache  *redis_store.OfflineMsgCache
@@ -58,6 +59,7 @@ func NewMsgServer(cfg *MsgServerConfig, rs *redis_store.RedisStore) *MsgServer {
 		channels:        make(base.ChannelMap),
 		topics:          make(protocol.TopicMap),
 		server:          new(libnet.Server),
+		voiceCache:      redis_store.NewVoiceCache(rs),
 		sessionCache:    redis_store.NewSessionCache(rs),
 		topicCache:      redis_store.NewTopicCache(rs),
 		offlineMsgCache: redis_store.NewOfflineMsgCache(rs),
@@ -232,6 +234,16 @@ func (self *MsgServer) parseProtocol(cmd []byte, session *libnet.Session) error 
 		if err != nil {
 			return err
 		}
+	case "U" + protocol.DEIVCE_VOICE_UP_CMD: //语音文件上行
+		err = pp.procVoiceUp(&c, session)
+		if err != nil {
+			return err
+		}
+	case "C" + protocol.DEIVCE_VOICE_DOWN_CMD: //语音文件下行
+		err = pp.procVoiceDown(&c, session)
+		if err != nil {
+			return err
+		}
 	case "U" + protocol.DEIVCE_LINK_DESC_CMD: //连接用途请求通知（上行）
 		err = pp.prochLinkDesc(&c, session)
 		if err != nil {
@@ -262,11 +274,6 @@ func (self *MsgServer) parseProtocol(cmd []byte, session *libnet.Session) error 
 		if err != nil {
 			return err
 		}
-		// case "U"+protocol.DEIVCE_VOICE_UP_CMD:	//语音文件上行
-		// 	err = pp.prochVoiceUp(&c, session)
-		// 	if err != nil {
-		// 		return err
-		// 	}
 
 		// case protocol.REQ_LOGOUT_CMD:
 		// 	err = pp.procLogout(&c, session)

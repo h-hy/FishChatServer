@@ -25,7 +25,10 @@ func (this *UserController) Prepare() {
 	this.username = this.Ctx.Input.Param(":username")
 	if actionName != "Login" && actionName != "Post" && actionName != "ResetPassword" && actionName != "GetSMSCode" {
 		ticket := this.GetString("ticket")
-		if models.UserCheckTicket(this.username, ticket) == false {
+
+		user, err := models.GetUser(this.username)
+
+		if err != nil || user.CheckTicket(ticket) == false {
 			this.Data["json"] = restReturn(ERROR_USER_TICKET, ERROR_USER_TICKET_STRING, map[string]interface{}{})
 			this.ServeJSON()
 			return

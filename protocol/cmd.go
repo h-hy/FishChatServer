@@ -15,6 +15,8 @@
 
 package protocol
 
+import "encoding/base64"
+
 const (
 	DEV_TYPE_WATCH  = "D"
 	DEV_TYPE_CLIENT = "C"
@@ -367,6 +369,13 @@ func (self *CmdSimple) GetCmdName() string {
 func (self *CmdSimple) GetDatas() string {
 	resp := "JHD1{<" + self.GetCmdName() + "#"
 	for i := 0; i < len(self.Args); i++ {
+		if self.GetCmdName() == "D"+DEIVCE_VOICE_DOWN_CMD {
+			if len(self.Args) == 5 && self.Args[1] == "1" && i == 4 {
+				data, _ := base64.StdEncoding.DecodeString(self.Args[i])
+				resp += string(data) + "#"
+				continue
+			}
+		}
 		resp += self.Args[i] + "#"
 	}
 	resp += ">}\r\n"

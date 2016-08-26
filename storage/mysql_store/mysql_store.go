@@ -69,7 +69,7 @@ func (self *MysqlStore) InserLocation(IMEI string, locationObj provider.Location
 }
 
 func (self *MysqlStore) DeviceUpdate(IMEI, query string, args ...interface{}) error {
-	stmt, err := self.db.Prepare("UPDATE `devices` SET " + query + " WHERE IMEI = ?")
+	stmt, err := self.db.Prepare("UPDATE `device` SET " + query + " WHERE IMEI = ?")
 	if err != nil {
 		return err
 	}
@@ -83,7 +83,7 @@ func (self *MysqlStore) DeviceUpdate(IMEI, query string, args ...interface{}) er
 
 func (self *MysqlStore) GetDeviceFromIMEI(IMEI string) (map[string]interface{}, error) {
 	columns := []string{"IMEI", "energy", "work_model", "volume"}
-	sql := fmt.Sprintf("select %s from `devices` where IMEI = ?", strings.Join(columns, ", "))
+	sql := fmt.Sprintf("select %s from `device` where IMEI = ?", strings.Join(columns, ", "))
 	log.Info(sql)
 	row := self.db.QueryRow(sql, IMEI)
 	scanArgs := make([]interface{}, len(columns))

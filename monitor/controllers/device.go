@@ -2,12 +2,15 @@ package controllers
 
 import (
 	"strconv"
+	"time"
 	//	"fmt"
 	//	"fmt"
 	//	"encoding/json"
+	"path/filepath"
 
 	"github.com/astaxie/beego"
 	"github.com/astaxie/beego/orm"
+	"github.com/chanxuehong/wechat.v2/mp/media"
 	"github.com/oikomi/FishChatServer/libnet"
 	"github.com/oikomi/FishChatServer/log"
 	"github.com/oikomi/FishChatServer/monitor/models"
@@ -18,7 +21,7 @@ import (
 type DeviceController struct {
 	beego.Controller
 	username string
-	userId   string
+	userId   int
 	m        *service.Monitor
 }
 
@@ -26,18 +29,17 @@ func (this *DeviceController) Prepare() {
 	this.Ctx.ResponseWriter.Header().Add("Access-Control-Allow-Origin", "*")
 	ticket := this.GetString("ticket")
 	this.username = this.GetString("username")
-	log.Info(string(this.Ctx.Input.RequestBody))
-	log.Info("ticket=", ticket)
-	log.Info("this.username=", this.username)
-	if models.UserCheckTicket(this.username, ticket) == false {
+	user, err := models.GetUser(this.username)
+	if err != nil || user.CheckTicket(ticket) == false {
 		this.Data["json"] = restReturn(44001, "尚未登录或者登陆失效，请重新登陆", map[string]interface{}{})
 		this.ServeJSON()
 		return
 	}
+	this.userId = user.Id
 	_, actionName := this.GetControllerAndAction()
 	if actionName != "Post" && actionName != "Get" {
 		IMEI := this.Ctx.Input.Param(":IMEI")
-		if models.CheckBind(this.username, IMEI) == false {
+		if user.CheckBind(IMEI) == false {
 			this.Data["json"] = restReturn(ERROR_DEIVCE_NOT_BIND, ERROR_DEIVCE_NOT_BIND_STRING, map[string]interface{}{})
 			this.ServeJSON()
 			return
@@ -299,8 +301,9 @@ func (this *DeviceController) sendToDevice(IMEI, cmdName string, Arg1 ...string)
 			cmd := protocol.NewCmdSimple(protocol.ACTION_TRANSFER_TO_DEVICE)
 			cmd.Infos["cmdName"] = cmdName
 			if len(Arg1) > 0 {
-				cmd.AddArg(Arg1[0])
-
+				for _, arg := range Arg1 {
+					cmd.AddArg(arg)
+				}
 			}
 			cmd.Infos["IMEI"] = IMEI
 			cmd.Infos["ConnectServerUUID"] = sessionCacheData.ConnectServerUUID
@@ -398,6 +401,7 @@ func (this *DeviceController) Put() {
 // @router /:IMEI/action/location [post]
 func (this *DeviceController) PostActionLocation() {
 	IMEI := this.Ctx.Input.Param(":IMEI")
+	models.NewDeviceCommand(this.userId, IMEI, "LOCATON", protocol.DEIVCE_LOCATON_CMD, "")
 	this.sendToDevice(IMEI, "D"+protocol.DEIVCE_LOCATON_CMD)
 	this.Data["json"] = restReturn(0, "操作成功", map[string]interface{}{
 		"messageId": 123,
@@ -428,8 +432,9 @@ func (this *DeviceController) PostActionLocation() {
 // @router /:IMEI/action/shutdown [post]
 func (this *DeviceController) PostActionShutdown() {
 	IMEI := this.Ctx.Input.Param(":IMEI")
+	models.NewDeviceCommand(this.userId, IMEI, "SHUTDOWN", protocol.DEIVCE_SHUTDOWN_CMD, "")
 	this.sendToDevice(IMEI, "D"+protocol.DEIVCE_SHUTDOWN_CMD)
-	this.Data["json"] = restReturn(0, "操作成功设备关机"+IMEI, map[string]interface{}{
+	this.Data["json"] = restReturn(0, "操作成功", map[string]interface{}{
 		"messageId": 123,
 	})
 	this.ServeJSON()
@@ -442,10 +447,14 @@ func (this *DeviceController) PostActionShutdown() {
  *
  * @apiParam {String} username 用户名
  * @apiParam {String} ticket 用户接口调用凭据
- * @apiParam {String} [mp3Url] mp3地址（和wechatMediaId二选一）
- * @apiParam {String} [wechatMediaId] 微信提供的mediaId（和mp3Url二选一）
+ * @apiParam {String} wechatMediaId 微信提供的mediaId
  *
- * @apiSuccess {Number} messageId 消息ID
+ * @apiSuccess {Number} id 消息id
+ * @apiSuccess {Number} direction 语音方向，1为上行（设备->服务器），2为下行（服务器->设备）
+ * @apiSuccess {String} type 消息类型，目前为voice
+ * @apiSuccess {String} voiceUrl 语音url
+ * @apiSuccess {String} created_at 消息产生时间，格式为Y-m-d H:i:s
+ * @apiSuccess {String} status 当前消息状态
  *
  * @apiSuccessExample Success-Response:
  *     HTTP/1.1 200 OK
@@ -453,7 +462,12 @@ func (this *DeviceController) PostActionShutdown() {
  *         "errcode": 0,
  *         "errmsg": "操作成功",
  *         "data": {
- *             "messageId": 123,
+ *             "id": 2,
+ *             "direction": 2,
+ *             "type": "voice",
+ *             "voiceUrl": "http://xxx.xxx.com/",
+ *             "created_at": "2016-01-01 00:00:00",
+ *             "status": "发送中..."
  *         }
  *     }
  */
@@ -461,8 +475,48 @@ func (this *DeviceController) PostActionShutdown() {
 // @router /:IMEI/voice [post]
 func (this *DeviceController) PostVoice() {
 	IMEI := this.Ctx.Input.Param(":IMEI")
-	this.Data["json"] = restReturn(0, "发送聊天语音"+IMEI, map[string]interface{}{
-		"messageId": 123,
+	wechatMediaId := this.GetString("wechatMediaId")
+	if wechatMediaId == "" {
+		this.Data["json"] = restReturn(50000, "wechatMediaId不能为空", map[string]interface{}{})
+		this.ServeJSON()
+		return
+	}
+	//开始保存文件
+	amrSaveDir, _ := filepath.Abs(beego.AppConfig.String("amrSaveDir"))
+	amrURIPrefix := beego.AppConfig.String("amrURIPrefix")
+	timestr := time.Now().Format("2006_01_02_15_04_05")
+	filename := IMEI + "_" + timestr + "_" + string(Krand(5, KC_RAND_KIND_LOWER)) + ".amr"
+	log.Info(amrSaveDir + filename)
+	written, err := media.Download(wechatClient, wechatMediaId, amrSaveDir+filename)
+	if err != nil {
+		log.Info(err)
+		this.Data["json"] = restReturn(50000, "wechatMediaId错误", map[string]interface{}{})
+		this.ServeJSON()
+		return
+	}
+	//保存文件完毕，开始写入下行指令
+	uri := amrURIPrefix + filename
+
+	DMSId, cmdId, err := models.NewDeviceCommand(this.userId, IMEI, "VOICE_DOWN", protocol.DEIVCE_VOICE_DOWN_CMD, uri)
+	if err != nil {
+		log.Info(err)
+		this.Data["json"] = restReturn(50000, "保存失败", map[string]interface{}{})
+		this.ServeJSON()
+		return
+	}
+	//写入下行指令完毕，开始检查客户端是否在线
+	voice := service.Voice{Id: cmdId, Uri: uri, PathFilename: amrSaveDir + filename, Size: int(written)}
+	voice.Cache()
+
+	this.sendToDevice(IMEI, "D"+protocol.DEIVCE_SHUTDOWN_CMD, strconv.Itoa(cmdId), "0", "amr", strconv.Itoa(int(written)))
+	//全部操作完成
+	this.Data["json"] = restReturn(0, "操作成功", map[string]interface{}{
+		"id":         DMSId,
+		"direction":  2,
+		"type":       "voice",
+		"created_at": time.Now().Format("2006-01-02 15:04:05"),
+		"status":     "发送中...",
+		"voiceUrl":   uri,
 	})
 	this.ServeJSON()
 }
@@ -494,14 +548,14 @@ func (this *DeviceController) PostVoice() {
  *             "id": 2,
  *             "direction": 2,
  *             "type": "voice",
- *             "url": "http://xxx.xxx.com/",
+ *             "voiceUrl": "http://xxx.xxx.com/",
  *             "created_at": "2016-01-01 00:00:00",
  *             "status": "已发送到手表"
  *         },{
  *             "id": 1,
  *             "direction": 1,
  *             "type": "voice",
- *             "url": "http://xxx.xxx.com/",
+ *             "voiceUrl": "http://xxx.xxx.com/",
  *             "created_at": "2016-01-01 00:00:00",
  *             "status": "已读"
  *         }]
@@ -509,31 +563,45 @@ func (this *DeviceController) PostVoice() {
  */
 // @router /:IMEI/chatRecord [get]
 func (this *DeviceController) GetChatRecord() {
+	IMEI := this.Ctx.Input.Param(":IMEI")
+	startId := this.GetString("startId")
+	orderType := this.GetString("orderType")
+	if orderType != "" && orderType != "timeDesc" {
+		this.Data["json"] = restReturn(50000, "orderType不支持", map[string]interface{}{})
+		this.ServeJSON()
+		return
+	}
+	i_startId, err := strconv.Atoi(startId)
+	if err != nil {
+		i_startId = 0
+	}
+	length := this.GetString("length")
+	i_length, err := strconv.Atoi(length)
+	if err != nil {
+		i_length = 10
+	}
+	//参数读取完毕，开始加载数据
 	var data []map[string]interface{}
-	data = append(data, map[string]interface{}{
-		"id":         3,
-		"direction":  1,
-		"type":       "voice",
-		"url":        "http://xxx.xxx.com/",
-		"created_at": "2016-01-01 00:00:02",
-		"status":     "已读",
-	})
-	data = append(data, map[string]interface{}{
-		"id":         2,
-		"direction":  2,
-		"type":       "voice",
-		"url":        "http://xxx.xxx.com/",
-		"created_at": "2016-01-01 00:00:01",
-		"status":     "已发送到手表",
-	})
-	data = append(data, map[string]interface{}{
-		"id":         1,
-		"direction":  1,
-		"type":       "voice",
-		"url":        "http://xxx.xxx.com/",
-		"created_at": "2016-01-01 00:00:00",
-		"status":     "已读",
-	})
+	o := orm.NewOrm()
+	var charRecord []models.DeviceMessageCenter
+	//	charRecord := models.DeviceMessageCenter{UserId: this.userId}
+
+	q := o.QueryTable(&models.DeviceMessageCenter{}).Filter("UserId", this.userId).Filter("IMEI", IMEI).Filter("action", "voice").OrderBy("-id").Limit(i_length)
+	if i_startId > 0 {
+		q = q.Filter("id__lt", i_startId)
+	}
+	q.All(&charRecord)
+	//数据加载完毕，开始构建回复
+	for _, record := range charRecord {
+		data = append(data, map[string]interface{}{
+			"id":         record.Id,
+			"direction":  record.Direction,
+			"type":       "voice",
+			"voiceUrl":   record.VoiceUri,
+			"created_at": record.CreatedAt,
+			"status":     record.Content,
+		})
+	}
 	this.Data["json"] = restReturn(0, "操作成功", data)
 	this.ServeJSON()
 }

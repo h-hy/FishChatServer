@@ -259,7 +259,6 @@ func (self *ProtoProc) prochLocation(cmd protocol.Cmd, session *libnet.Session) 
 	}
 	return nil
 }
-
 func (self *ProtoProc) prochLinkDesc(cmd protocol.Cmd, session *libnet.Session) error {
 	log.Info("prochLinkDesc")
 	resp := protocol.NewCmdSimple("C" + cmd.GetCmdName()[1:])

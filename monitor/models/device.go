@@ -37,7 +37,7 @@ func CheckBind(username, IMEI string) bool {
 	if cacheExist == true {
 		//重新获取一次试试
 		//		redisCache.Delete("user_" + username)
-		user.updateDevice()
+		user.UpdateDevice()
 		log.Info(IMEI)
 		for _, device := range user.Devices {
 			log.Info(device.IMEI)

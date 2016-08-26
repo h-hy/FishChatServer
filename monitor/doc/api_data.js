@@ -1,5 +1,33 @@
 define({ "api": [
   {
+    "success": {
+      "fields": {
+        "Success 200": [
+          {
+            "group": "Success 200",
+            "optional": false,
+            "field": "varname1",
+            "description": "<p>No type.</p>"
+          },
+          {
+            "group": "Success 200",
+            "type": "String",
+            "optional": false,
+            "field": "varname2",
+            "description": "<p>With type.</p>"
+          }
+        ]
+      }
+    },
+    "type": "",
+    "url": "",
+    "version": "0.0.0",
+    "filename": "./doc/main.js",
+    "group": "D__git_client_RDAWatchServer_src_github_com_oikomi_FishChatServer_monitor_doc_main_js",
+    "groupTitle": "D__git_client_RDAWatchServer_src_github_com_oikomi_FishChatServer_monitor_doc_main_js",
+    "name": ""
+  },
+  {
     "type": "get",
     "url": "/device/:IMEI/chatRecord",
     "title": "拉取聊天记录",
@@ -102,7 +130,7 @@ define({ "api": [
       "examples": [
         {
           "title": "Success-Response:",
-          "content": "HTTP/1.1 200 OK\n{\n    \"errcode\": 0,\n    \"errmsg\": \"操作成功\",\n    \"data\": [{\n        \"id\": 2,\n        \"direction\": 2,\n        \"type\": \"voice\",\n        \"url\": \"http://xxx.xxx.com/\",\n        \"created_at\": \"2016-01-01 00:00:00\",\n        \"status\": \"已发送到手表\"\n    },{\n        \"id\": 1,\n        \"direction\": 1,\n        \"type\": \"voice\",\n        \"url\": \"http://xxx.xxx.com/\",\n        \"created_at\": \"2016-01-01 00:00:00\",\n        \"status\": \"已读\"\n    }]\n}",
+          "content": "HTTP/1.1 200 OK\n{\n    \"errcode\": 0,\n    \"errmsg\": \"操作成功\",\n    \"data\": [{\n        \"id\": 2,\n        \"direction\": 2,\n        \"type\": \"voice\",\n        \"voiceUrl\": \"http://xxx.xxx.com/\",\n        \"created_at\": \"2016-01-01 00:00:00\",\n        \"status\": \"已发送到手表\"\n    },{\n        \"id\": 1,\n        \"direction\": 1,\n        \"type\": \"voice\",\n        \"voiceUrl\": \"http://xxx.xxx.com/\",\n        \"created_at\": \"2016-01-01 00:00:00\",\n        \"status\": \"已读\"\n    }]\n}",
           "type": "json"
         }
       ]
@@ -142,16 +170,9 @@ define({ "api": [
           {
             "group": "Parameter",
             "type": "String",
-            "optional": true,
-            "field": "mp3Url",
-            "description": "<p>mp3地址（和wechatMediaId二选一）</p>"
-          },
-          {
-            "group": "Parameter",
-            "type": "String",
-            "optional": true,
+            "optional": false,
             "field": "wechatMediaId",
-            "description": "<p>微信提供的mediaId（和mp3Url二选一）</p>"
+            "description": "<p>微信提供的mediaId</p>"
           }
         ]
       }
@@ -163,15 +184,50 @@ define({ "api": [
             "group": "Success 200",
             "type": "Number",
             "optional": false,
-            "field": "messageId",
-            "description": "<p>消息ID</p>"
+            "field": "id",
+            "description": "<p>消息id</p>"
+          },
+          {
+            "group": "Success 200",
+            "type": "Number",
+            "optional": false,
+            "field": "direction",
+            "description": "<p>语音方向，1为上行（设备-&gt;服务器），2为下行（服务器-&gt;设备）</p>"
+          },
+          {
+            "group": "Success 200",
+            "type": "String",
+            "optional": false,
+            "field": "type",
+            "description": "<p>消息类型，目前为voice</p>"
+          },
+          {
+            "group": "Success 200",
+            "type": "String",
+            "optional": false,
+            "field": "voiceUrl",
+            "description": "<p>语音url</p>"
+          },
+          {
+            "group": "Success 200",
+            "type": "String",
+            "optional": false,
+            "field": "created_at",
+            "description": "<p>消息产生时间，格式为Y-m-d H:i:s</p>"
+          },
+          {
+            "group": "Success 200",
+            "type": "String",
+            "optional": false,
+            "field": "status",
+            "description": "<p>当前消息状态</p>"
           }
         ]
       },
       "examples": [
         {
           "title": "Success-Response:",
-          "content": "HTTP/1.1 200 OK\n{\n    \"errcode\": 0,\n    \"errmsg\": \"操作成功\",\n    \"data\": {\n        \"messageId\": 123,\n    }\n}",
+          "content": "HTTP/1.1 200 OK\n{\n    \"errcode\": 0,\n    \"errmsg\": \"操作成功\",\n    \"data\": {\n        \"id\": 2,\n        \"direction\": 2,\n        \"type\": \"voice\",\n        \"voiceUrl\": \"http://xxx.xxx.com/\",\n        \"created_at\": \"2016-01-01 00:00:00\",\n        \"status\": \"发送中...\"\n    }\n}",
           "type": "json"
         }
       ]
@@ -563,34 +619,6 @@ define({ "api": [
         "url": "http://api.watch.h-hy.com:8080/v1/device"
       }
     ]
-  },
-  {
-    "success": {
-      "fields": {
-        "Success 200": [
-          {
-            "group": "Success 200",
-            "optional": false,
-            "field": "varname1",
-            "description": "<p>No type.</p>"
-          },
-          {
-            "group": "Success 200",
-            "type": "String",
-            "optional": false,
-            "field": "varname2",
-            "description": "<p>With type.</p>"
-          }
-        ]
-      }
-    },
-    "type": "",
-    "url": "",
-    "version": "0.0.0",
-    "filename": "./doc/main.js",
-    "group": "F__git_client_RDAWatchServer_src_github_com_oikomi_FishChatServer_monitor_doc_main_js",
-    "groupTitle": "F__git_client_RDAWatchServer_src_github_com_oikomi_FishChatServer_monitor_doc_main_js",
-    "name": ""
   },
   {
     "type": "get",
