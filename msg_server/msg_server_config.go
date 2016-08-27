@@ -16,9 +16,10 @@
 package main
 
 import (
-	"os"
 	"encoding/json"
+	"os"
 	"time"
+
 	"github.com/oikomi/FishChatServer/log"
 )
 
@@ -28,35 +29,37 @@ type MsgServerConfig struct {
 	TransportProtocols       string
 	Listen                   string
 	LogFile                  string
+	VoiceUpSaveDir           string
+	AmrURIPrefix             string
 	ScanDeadSessionTimeout   time.Duration
 	Expire                   time.Duration
 	MonitorBeatTime          time.Duration
 	SessionManagerServerList []string
-	Redis struct { 
-		Addr string 
-		Port string
-		ConnectTimeout time.Duration
-		ReadTimeout time.Duration
-		WriteTimeout time.Duration
-	} 
-	Mysql struct { 
-		Addr           string 
+	Redis                    struct {
+		Addr           string
 		Port           string
-		User           string
-		Password       string
-		Database       string
-		MaxOpenConn       int
-		MaxOIdleConn       int
-	} 
+		ConnectTimeout time.Duration
+		ReadTimeout    time.Duration
+		WriteTimeout   time.Duration
+	}
+	Mysql struct {
+		Addr         string
+		Port         string
+		User         string
+		Password     string
+		Database     string
+		MaxOpenConn  int
+		MaxOIdleConn int
+	}
 }
 
 func NewMsgServerConfig(configfile string) *MsgServerConfig {
 	return &MsgServerConfig{
-		configfile : configfile,
+		configfile: configfile,
 	}
 }
 
-func (self *MsgServerConfig)LoadConfig() error {
+func (self *MsgServerConfig) LoadConfig() error {
 	file, err := os.Open(self.configfile)
 	if err != nil {
 		log.Error(err.Error())
@@ -72,7 +75,7 @@ func (self *MsgServerConfig)LoadConfig() error {
 	return nil
 }
 
-func (self *MsgServerConfig)DumpConfig() {
-	//fmt.Printf("Mode: %s\nListen: %s\nServer: %s\nLogfile: %s\n", 
+func (self *MsgServerConfig) DumpConfig() {
+	//fmt.Printf("Mode: %s\nListen: %s\nServer: %s\nLogfile: %s\n",
 	//cfg.Mode, cfg.Listen, cfg.Server, cfg.Logfile)
 }

@@ -27,7 +27,6 @@ import (
 	"github.com/oikomi/FishChatServer/libnet"
 	"github.com/oikomi/FishChatServer/log"
 	"github.com/oikomi/FishChatServer/protocol"
-	"github.com/oikomi/FishChatServer/storage/mysql_store"
 	"github.com/oikomi/FishChatServer/storage/redis_store"
 )
 
@@ -37,17 +36,15 @@ func init() {
 }
 
 type MsgServer struct {
-	cfg              *MsgServerConfig
-	sessions         base.SessionMap
-	channels         base.ChannelMap
-	topics           protocol.TopicMap
-	server           *libnet.Server
-	voiceCache       *redis_store.VoiceCache
-	sessionCache     *redis_store.SessionCache
-	topicCache       *redis_store.TopicCache
-	offlineMsgCache  *redis_store.OfflineMsgCache
-	p2pStatusCache   *redis_store.P2pStatusCache
-	mysqlStore       *mysql_store.MysqlStore
+	cfg             *MsgServerConfig
+	sessions        base.SessionMap
+	channels        base.ChannelMap
+	server          *libnet.Server
+	voiceCache      *redis_store.VoiceCache
+	sessionCache    *redis_store.SessionCache
+	offlineMsgCache *redis_store.OfflineMsgCache
+	p2pStatusCache  *redis_store.P2pStatusCache
+	//	mysqlStore       *mysql_store.MysqlStore
 	scanSessionMutex sync.Mutex
 	readMutex        sync.Mutex // multi client session may ask for REDIS at the same time
 }
@@ -57,14 +54,12 @@ func NewMsgServer(cfg *MsgServerConfig, rs *redis_store.RedisStore) *MsgServer {
 		cfg:             cfg,
 		sessions:        make(base.SessionMap),
 		channels:        make(base.ChannelMap),
-		topics:          make(protocol.TopicMap),
 		server:          new(libnet.Server),
 		voiceCache:      redis_store.NewVoiceCache(rs),
 		sessionCache:    redis_store.NewSessionCache(rs),
-		topicCache:      redis_store.NewTopicCache(rs),
 		offlineMsgCache: redis_store.NewOfflineMsgCache(rs),
 		p2pStatusCache:  redis_store.NewP2pStatusCache(rs),
-		mysqlStore:      mysql_store.NewMysqlStore(cfg.Mysql.Addr, cfg.Mysql.Port, cfg.Mysql.User, cfg.Mysql.Password, cfg.Mysql.Database, cfg.Mysql.MaxOpenConn, cfg.Mysql.MaxOIdleConn),
+		//		mysqlStore:      mysql_store.NewMysqlStore(cfg.Mysql.Addr, cfg.Mysql.Port, cfg.Mysql.User, cfg.Mysql.Password, cfg.Mysql.Database, cfg.Mysql.MaxOpenConn, cfg.Mysql.MaxOIdleConn),
 	}
 }
 

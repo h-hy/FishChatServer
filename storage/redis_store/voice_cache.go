@@ -42,18 +42,20 @@ type VoiceCacheData struct {
 	Id           int
 	Uri          string
 	PathFilename string
+	Filename     string
 	Format       string
 	Size         int
 	NowGroup     int
 	NowSize      int
 }
 
-func (self *VoiceCache) NewVoiceCacheData(Type string, id int, uri, pathFilename, format string, size int) *VoiceCacheData {
+func (self *VoiceCache) NewVoiceCacheData(Type string, id int, uri, filename, pathFilename, format string, size int) *VoiceCacheData {
 
 	cacheData := &VoiceCacheData{
 		Type:         Type,
 		Id:           id,
 		Uri:          uri,
+		Filename:     filename,
 		PathFilename: pathFilename,
 		Format:       format,
 		Size:         size,

@@ -3,14 +3,17 @@ package main
 import (
 	"encoding/base64"
 	"io"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"strconv"
+	"time"
 	// "bytes"
 
 	// "github.com/oikomi/FishChatServer/common"
 	"github.com/oikomi/FishChatServer/libnet"
 	"github.com/oikomi/FishChatServer/log"
+	"github.com/oikomi/FishChatServer/models"
 	"github.com/oikomi/FishChatServer/protocol"
 )
 
@@ -35,9 +38,12 @@ func readFile(pathFilename string, sizePreGroup, groupId int) (int, []byte, erro
 
 func writeFile(pathFilename string, data []byte, off int64) (int, error) {
 	//	file, err := os.Create(pathFilename) // For read access.
+
 	file, err := os.OpenFile(pathFilename, os.O_RDWR, 0666) // For read access.
 	defer file.Close()
-	if err != nil {
+	if os.IsNotExist(err) {
+		file, err = os.Create(pathFilename) //创建文件
+	} else if err != nil {
 		log.Info("Create File Error", err)
 		return 0, err
 	}
@@ -211,10 +217,11 @@ func (self *ProtoProc) procVoiceUp(cmd protocol.Cmd, session *libnet.Session) er
 		}
 		if !fail {
 			//创建缓存
-			pathFilename := "test.amr"
-			UpAMRSaveDir, _ := filepath.Abs("./")
-			log.Info(UpAMRSaveDir + pathFilename)
-			voiceCacheData := self.msgServer.voiceCache.NewVoiceCacheData("UP", id, "", UpAMRSaveDir+pathFilename, format, size)
+			timestr := time.Now().Format("2006_01_02_15_04_05")
+			filename := IMEI + "_" + timestr + "_" + string(Krand(5, KC_RAND_KIND_LOWER)) + ".amr"
+			UpAMRSaveDir, _ := filepath.Abs(self.msgServer.cfg.VoiceUpSaveDir)
+			log.Info(UpAMRSaveDir + filename)
+			voiceCacheData := self.msgServer.voiceCache.NewVoiceCacheData("UP", id, "", filename, UpAMRSaveDir+filename, format, size)
 			self.msgServer.voiceCache.Set(voiceCacheData)
 			//创建缓存完毕   REPLY : KID#ID#0#1#
 		}
@@ -297,7 +304,6 @@ func (self *ProtoProc) procVoiceUp(cmd protocol.Cmd, session *libnet.Session) er
 
 	} else if step == "2" {
 		//上传数据完毕 U36#KID#ID#1#groupid#size#group data
-		//文件信息读取完毕KID#ID#0#1#
 		fail := false
 		voiceCacheData, err := self.msgServer.voiceCache.Get("UP", cmd.GetArgs()[1]) //id
 		if err != nil {
@@ -310,11 +316,18 @@ func (self *ProtoProc) procVoiceUp(cmd protocol.Cmd, session *libnet.Session) er
 			return nil
 		}
 		if !fail {
+			amrURIPrefix := self.msgServer.cfg.AmrURIPrefix
+			_, err := models.NewVoiceStore(0, IMEI, amrURIPrefix+voiceCacheData.Filename)
+			if err != nil {
+				log.Info(err)
+				fail = true
+			}
+		}
+		if !fail {
 			newCmd.AddArg("1")
 		} else {
 			newCmd.AddArg("2")
 		}
-
 		if session != nil {
 			if err := session.Send(libnet.Json(newCmd)); err != nil {
 				log.Error(err.Error())
@@ -322,4 +335,25 @@ func (self *ProtoProc) procVoiceUp(cmd protocol.Cmd, session *libnet.Session) er
 		}
 	}
 	return nil
+}
+
+const (
+	KC_RAND_KIND_NUM   = 0 // 纯数字
+	KC_RAND_KIND_LOWER = 1 // 小写字母
+	KC_RAND_KIND_UPPER = 2 // 大写字母
+	KC_RAND_KIND_ALL   = 3 // 数字、大小写字母
+)
+
+func Krand(size int, kind int) []byte {
+	ikind, kinds, result := kind, [][]int{[]int{10, 48}, []int{26, 97}, []int{26, 65}}, make([]byte, size)
+	is_all := kind > 2 || kind < 0
+	rand.Seed(time.Now().UnixNano())
+	for i := 0; i < size; i++ {
+		if is_all { // random ikind
+			ikind = rand.Intn(3)
+		}
+		scope, base := kinds[ikind][0], kinds[ikind][1]
+		result[i] = uint8(base + rand.Intn(scope))
+	}
+	return result
 }

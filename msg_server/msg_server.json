@@ -3,6 +3,8 @@
 	"TransportProtocols"       : "tcp",
 	"Listen"                   : "0.0.0.0:19000",
 	"LogFile"                  : "msg_server.log",
+	"VoiceUpSaveDir"           : "./voiceup/",
+	"AmrURIPrefix"             : "http://baidu.com/",
 	"ScanDeadSessionTimeout"   : 180,
 	"Expire"                   : 100,
 

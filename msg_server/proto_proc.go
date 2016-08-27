@@ -23,7 +23,9 @@ import (
 	"time"
 	// "bytes"
 
+	"github.com/astaxie/beego/orm"
 	"github.com/oikomi/FishChatServer/base"
+	"github.com/oikomi/FishChatServer/models"
 	// "github.com/oikomi/FishChatServer/common"
 	"github.com/oikomi/FishChatServer/libnet"
 	"github.com/oikomi/FishChatServer/log"
@@ -100,13 +102,19 @@ func (self *ProtoProc) procGoOffLine(cmd protocol.Cmd, session *libnet.Session) 
 	if sessionCacheData != nil {
 		sessionCacheData.MsgServerAddr = ""
 		if sessionCacheData.Alive != false {
-			self.msgServer.mysqlStore.DeviceUpdate(IMEI, "alive=false")
+			o := orm.NewOrm()
+			device := models.Device{IMEI: IMEI}
+			device.Alive = 0
+			o.Update(&device, "Alive")
 		}
 		sessionCacheData.Alive = false
 		sessionCacheData.MaxAge = 600 * time.Second
 		self.msgServer.sessionCache.Set(sessionCacheData)
 	} else {
-		self.msgServer.mysqlStore.DeviceUpdate(IMEI, "alive=false")
+		o := orm.NewOrm()
+		device := models.Device{IMEI: IMEI}
+		device.Alive = 0
+		o.Update(&device, "Alive")
 	}
 
 	return err
@@ -144,15 +152,21 @@ func (self *ProtoProc) checkCache(IMEI string, session *libnet.Session) (*redis_
 	sessionCacheData, err := self.msgServer.sessionCache.Get(IMEI)
 	if sessionCacheData == nil {
 		log.Warningf("no cache IMEI : %s, err: %s", IMEI, err.Error())
-		deviceStoreData, _ := self.msgServer.mysqlStore.GetDeviceFromIMEI(IMEI)
-		if deviceStoreData == nil {
+		o := orm.NewOrm()
+		device := models.Device{IMEI: IMEI}
+
+		err := o.Read(&device, "IMEI")
+		if err == orm.ErrNoRows {
 			// not registered
 			self.closeSession(IMEI, session)
 			log.Warningf("no store IMEI : %s, err: %s", IMEI, err.Error())
 			return nil, err
-		} else {
+		} else if err == nil {
 			UUID := session.State.(*base.SessionState).ClientID
-			sessionCacheData := redis_store.NewSessionCacheData(IMEI, session.Conn().RemoteAddr().String(), self.msgServer.cfg.LocalIP, UUID, deviceStoreData)
+			energy := device.Energy
+			work_model := device.Work_model
+			volume := device.Volume
+			sessionCacheData := redis_store.NewSessionCacheData(IMEI, session.Conn().RemoteAddr().String(), self.msgServer.cfg.LocalIP, UUID, energy, work_model, volume)
 			return sessionCacheData, nil
 		}
 	}
@@ -178,7 +192,12 @@ func (self *ProtoProc) prochHeartbeat(cmd protocol.Cmd, session *libnet.Session)
 				sessionCacheData.Energy = energy
 				sessionCacheData.Alive = true
 				self.msgServer.sessionCache.Set(sessionCacheData)
-				self.msgServer.mysqlStore.DeviceUpdate(IMEI, "energy=? and alive=true", energy)
+
+				o := orm.NewOrm()
+				device := models.Device{IMEI: IMEI}
+				device.Energy = energy
+				device.Alive = 1
+				o.Update(&device, "Energy", "Alive")
 			}
 		}
 	} else {
@@ -236,12 +255,15 @@ func (self *ProtoProc) prochLocation(cmd protocol.Cmd, session *libnet.Session) 
 			sessionCacheData.Alive = true
 			self.msgServer.sessionCache.Set(sessionCacheData)
 			//更新缓存完毕，开始增加历史位置记录
-			self.msgServer.mysqlStore.InserLocation(IMEI, locationInfo)
+			models.NewDeviceLocationHistory(IMEI, locationInfo)
 			//开始更新设备数据表
 			location, err := json.Marshal(locationInfo.LocationData)
 			log.Info(string(location))
 			if err == nil {
-				self.msgServer.mysqlStore.DeviceUpdate(IMEI, "location=?", string(location))
+				o := orm.NewOrm()
+				device := models.Device{IMEI: IMEI}
+				device.Location = string(location)
+				o.Update(&device, "location")
 			}
 		}
 		resp.AddArg("1")

@@ -18,7 +18,6 @@ package redis_store
 import (
 	"encoding/json"
 	"fmt"
-	"strconv"
 	"sync"
 	"time"
 
@@ -59,25 +58,8 @@ type SessionCacheData struct {
 	Location          provider.LocationDataStruct
 }
 
-func NewSessionCacheData(IMEI, ClientAddr string, MsgServerAddr, ConnectServerUUID string, data map[string]interface{}) *SessionCacheData {
-	var energy int
-	if data["energy"] == nil {
-		energy = 0
-	} else {
-		energy, _ = strconv.Atoi(data["energy"].(string))
-	}
-	var work_model int
-	if data["work_model"] == nil {
-		work_model = 0
-	} else {
-		work_model, _ = strconv.Atoi(data["work_model"].(string))
-	}
-	var volume int
-	if data["volume"] == nil {
-		volume = 0
-	} else {
-		volume, _ = strconv.Atoi(data["volume"].(string))
-	}
+func NewSessionCacheData(IMEI, ClientAddr string, MsgServerAddr, ConnectServerUUID string, energy, work_model, volume int) *SessionCacheData {
+
 	cacheData := &SessionCacheData{
 		IMEI:              IMEI,
 		ClientAddr:        ClientAddr,

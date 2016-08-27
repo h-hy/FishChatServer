@@ -20,6 +20,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/astaxie/beego/orm"
+	_ "github.com/go-sql-driver/mysql"
 	"github.com/oikomi/FishChatServer/base"
 	"github.com/oikomi/FishChatServer/libnet"
 	"github.com/oikomi/FishChatServer/log"
@@ -56,7 +58,7 @@ func version() {
 	fmt.Printf("msg_server version %s Copyright (c) 2014 Harold Miao (miaohong@miaohong.org)  \n", VERSION)
 }
 
-var InputConfFile = flag.String("conf_file", "msg_server.json", "input conf file name")
+//var InputConfFile = flag.String("conf_file", "msg_server.json", "input conf file name")
 
 func handleSession(ms *MsgServer, session *libnet.Session) {
 	session.Process(func(msg *libnet.InBuffer) error {
@@ -73,7 +75,7 @@ func main() {
 	version()
 	// fmt.Printf("built on %s\n", BuildTime())
 	flag.Parse()
-	cfg := NewMsgServerConfig(*InputConfFile)
+	cfg := NewMsgServerConfig("msg_server.json")
 	err := cfg.LoadConfig()
 	if err != nil {
 		log.Error(err.Error())
@@ -89,6 +91,18 @@ func main() {
 		Database:       1,
 		KeyPrefix:      base.COMM_PREFIX,
 	})
+
+	orm.Debug = true
+	orm.RegisterDriver("mysql", orm.DRMySQL)
+
+	maxIdle := 30
+	maxConn := 30
+
+	mysqlUsername := cfg.Mysql.User
+	mysqlPassword := cfg.Mysql.Password
+	mysqlDatabase := cfg.Mysql.Database
+
+	orm.RegisterDataBase("default", "mysql", mysqlUsername+":"+mysqlPassword+"@/"+mysqlDatabase+"?charset=utf8", maxIdle, maxConn)
 
 	ms := NewMsgServer(cfg, rs)
 
