@@ -40,6 +40,7 @@ func init() {
 		protocol.STORE_TOPIC_INFO,
 		protocol.SYSCTRL_CONNECT_SERVER,
 		protocol.SYSCTRL_API_SERVER,
+		protocol.SYSCTRL_PUSH_SERVER,
 	}
 }
 

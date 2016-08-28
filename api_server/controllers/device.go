@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"errors"
 	"strconv"
 	"time"
 	//	"fmt"
@@ -290,29 +291,31 @@ func (this *DeviceController) Delete() {
 	this.Data["json"] = restReturn(50000, "操作失败，请联系管理员", map[string]interface{}{})
 	this.ServeJSON()
 }
-func (this *DeviceController) sendToDevice(IMEI, cmdName string, Arg1 ...string) {
+func (this *DeviceController) sendToDevice(IMEI, cmdName string, Arg1 ...string) error {
 
 	sessionCacheData, _ := getCache(this.m, IMEI)
 	log.Info(sessionCacheData)
-	if sessionCacheData != nil {
-		if sessionCacheData.MsgServerAddr != "" &&
-			this.m.MsgServerClientMap[sessionCacheData.MsgServerAddr] != nil {
-			log.Info("ok")
-			cmd := protocol.NewCmdSimple(protocol.ACTION_TRANSFER_TO_DEVICE)
-			cmd.Infos["cmdName"] = cmdName
-			if len(Arg1) > 0 {
-				for _, arg := range Arg1 {
-					cmd.AddArg(arg)
-				}
+	if sessionCacheData != nil && sessionCacheData.MsgServerAddr != "" {
+		log.Info("ok")
+		cmd := protocol.NewCmdSimple(protocol.ACTION_TRANSFER_TO_DEVICE)
+		cmd.Infos["cmdName"] = cmdName
+		cmd.Infos["ConnectServerUUID"] = sessionCacheData.ConnectServerUUID
+		if len(Arg1) > 0 {
+			for _, arg := range Arg1 {
+				cmd.AddArg(arg)
 			}
-			cmd.Infos["IMEI"] = IMEI
-			cmd.Infos["ConnectServerUUID"] = sessionCacheData.ConnectServerUUID
-			err := this.m.MsgServerClientMap[sessionCacheData.MsgServerAddr].Session.Send(libnet.Json(cmd))
+		}
+		cmd.Infos["IMEI"] = IMEI
+		cmd.Infos["ConnectServerUUID"] = sessionCacheData.ConnectServerUUID
+		for _, pushServerClient := range this.m.PushServerClientMap {
+			err := pushServerClient.Session.Send(libnet.Json(cmd))
 			if err != nil {
 				log.Error(err.Error())
 			}
+			return nil
 		}
 	}
+	return errors.New("NOT FOUND")
 }
 
 /**

@@ -12,6 +12,9 @@
 	"MsgServerList"      : [
 		"127.0.0.1:19000"
 	],
+	"PushServerList"      : [
+		"127.0.0.1:19004"
+	],
 	"SessionManagerServerList" : [
 		"127.0.0.1:18000"
 	],

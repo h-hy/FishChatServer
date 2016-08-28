@@ -215,17 +215,17 @@ func (self *MsgServer) parseProtocol(cmd []byte, session *libnet.Session) error 
 		}
 
 	case "U" + protocol.DEIVCE_HEARTBEAT_CMD: //心跳包（上行）
-		err = pp.prochHeartbeat(&c, session)
+		err = pp.procHeartbeat(&c, session)
 		if err != nil {
 			return err
 		}
 	case "U" + protocol.DEIVCE_TIME_SYNC_CMD: //时间同步（上行）
-		err = pp.prochTimeSync(&c, session)
+		err = pp.procTimeSync(&c, session)
 		if err != nil {
 			return err
 		}
 	case "U" + protocol.DEIVCE_LOCATON_CMD: //定位数据（上行）
-		err = pp.prochLocation(&c, session)
+		err = pp.procLocation(&c, session)
 		if err != nil {
 			return err
 		}
@@ -240,32 +240,32 @@ func (self *MsgServer) parseProtocol(cmd []byte, session *libnet.Session) error 
 			return err
 		}
 	case "U" + protocol.DEIVCE_LINK_DESC_CMD: //连接用途请求通知（上行）
-		err = pp.prochLinkDesc(&c, session)
+		err = pp.procLinkDesc(&c, session)
 		if err != nil {
 			return err
 		}
 	case "U" + protocol.DEIVCE_VOICE_READED_CMD: //连接用途请求通知（上行）
-		err = pp.prochVoiceReaded(&c, session)
+		err = pp.procVoiceReaded(&c, session)
 		if err != nil {
 			return err
 		}
 	case "U" + protocol.DEIVCE_LOW_POWER_CMD: //连接用途请求通知（上行）
-		err = pp.prochLowPower(&c, session)
+		err = pp.procLowPower(&c, session)
 		if err != nil {
 			return err
 		}
 	case "U" + protocol.DEIVCE_UPDATE_SETTING_CMD: //连接用途请求通知（上行）
-		err = pp.prochupdateSetting(&c, session)
+		err = pp.procupdateSetting(&c, session)
 		if err != nil {
 			return err
 		}
 	case "U" + protocol.DEIVCE_SOS_CMD: //连接用途请求通知（上行）
-		err = pp.prochSOS(&c, session)
+		err = pp.procSOS(&c, session)
 		if err != nil {
 			return err
 		}
 	case protocol.ACTION_TRANSFER_TO_DEVICE: //转发指令到设备
-		err = pp.prochTransferToDevice(&c, session)
+		err = pp.procTransferToDevice(&c, session)
 		if err != nil {
 			return err
 		}

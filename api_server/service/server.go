@@ -32,11 +32,11 @@ type Monitor struct {
 	cfg                  *MonitorConfig
 	SessionCache         *redis_store.SessionCache
 	readMutex            sync.Mutex
-	MsgServerClientMap   map[string]*msgServerClientState
-	msgServerClientMutex sync.Mutex
+	PushServerClientMap   map[string]*pushServerClientState
+	pushServerClientMutex sync.Mutex
 }
 
-type msgServerClientState struct {
+type pushServerClientState struct {
 	Session          *libnet.Session
 	Alive            bool
 	Valid            bool
@@ -46,7 +46,7 @@ type msgServerClientState struct {
 func NewMonitor(cfg *MonitorConfig) *Monitor {
 	return &Monitor{
 		cfg:                cfg,
-		MsgServerClientMap: make(map[string]*msgServerClientState), //已经连接的消息服务器表
+		PushServerClientMap: make(map[string]*pushServerClientState), //已经连接的消息服务器表
 		SessionCache: redis_store.NewSessionCache(redis_store.NewRedisStore(&redis_store.RedisStoreOptions{
 			Network:        "tcp",
 			Address:        cfg.Redis.Addr + cfg.Redis.Port,
@@ -69,29 +69,29 @@ func (self *Monitor) scanDeadClient() {
 		case <-timer.C:
 			log.Info("begin scanDeadClient")
 			go func() {
-				for ms, msgServerClient := range self.MsgServerClientMap {
-					self.msgServerClientMutex.Lock()
-					if msgServerClient.Alive == false || msgServerClient.Valid == false {
+				for ms, pushServerClient := range self.PushServerClientMap {
+					self.pushServerClientMutex.Lock()
+					if pushServerClient.Alive == false || pushServerClient.Valid == false {
 						//心跳没有收到回复，链接作废
-						log.Warningf("CloseDeadClient [%s],Alive=%t,Valid=%t.", ms, msgServerClient.Alive, msgServerClient.Valid)
-						msgServerClient.Session.Close()
+						log.Warningf("CloseDeadClient [%s],Alive=%t,Valid=%t.", ms, pushServerClient.Alive, pushServerClient.Valid)
+						pushServerClient.Session.Close()
 					} else {
 						//发送心跳，等待回复
-						msgServerClient.Alive = false
+						pushServerClient.Alive = false
 						cmd := protocol.NewCmdSimple(protocol.SEND_PING_CMD)
 						cmd.AddArg(self.cfg.UUID)
-						err := msgServerClient.Session.Send(libnet.Json(cmd))
+						err := pushServerClient.Session.Send(libnet.Json(cmd))
 						if err != nil {
-							msgServerClient.Session.Close()
+							pushServerClient.Session.Close()
 						}
 					}
-					self.msgServerClientMutex.Unlock()
+					self.pushServerClientMutex.Unlock()
 				}
 			}()
 		}
 	}
 }
-func (self *Monitor) connectMsgServer(ms string) (*libnet.Session, error) {
+func (self *Monitor) connectPushServer(ms string) (*libnet.Session, error) {
 	client, err := libnet.Dial("tcp", ms)
 
 	return client, err
@@ -101,11 +101,11 @@ func (self *Monitor) connectMsgServer(ms string) (*libnet.Session, error) {
    处理消息服务器发送过来的数据
 */
 
-func (self *Monitor) handleMsgServerClient(msc *libnet.Session) error {
+func (self *Monitor) handlePushServerClient(msc *libnet.Session) error {
 	err := msc.Process(func(msg *libnet.InBuffer) error {
 		var c protocol.CmdSimple
 		ms := msc.Conn().RemoteAddr().String()
-		if self.MsgServerClientMap[ms] == nil {
+		if self.PushServerClientMap[ms] == nil {
 			log.Error(ms + " not exist")
 			return errors.New(ms + " not exist")
 		}
@@ -118,9 +118,9 @@ func (self *Monitor) handleMsgServerClient(msc *libnet.Session) error {
 		log.Infof("c.GetCmdName()=%s\n\n", c.GetCmdName())
 		switch c.GetCmdName() {
 		case protocol.SUBSCRIBE_CHANNEL_CMD_ACK:
-			self.MsgServerClientMap[ms].Valid = true
+			self.PushServerClientMap[ms].Valid = true
 		case protocol.PING_CMD_ACK:
-			self.MsgServerClientMap[ms].Alive = true
+			self.PushServerClientMap[ms].Alive = true
 		}
 		return nil
 	})
@@ -128,14 +128,14 @@ func (self *Monitor) handleMsgServerClient(msc *libnet.Session) error {
 }
 
 func (self *Monitor) subscribeChannels() error {
-	self.msgServerClientMutex.Lock()
-	defer self.msgServerClientMutex.Unlock()
-	for _, ms := range self.cfg.MsgServerList {
-		if self.MsgServerClientMap[ms] != nil {
+	self.pushServerClientMutex.Lock()
+	defer self.pushServerClientMutex.Unlock()
+	for _, ms := range self.cfg.PushServerList {
+		if self.PushServerClientMap[ms] != nil {
 			//已经创建过链接并且链接正常
 			continue
 		}
-		msgServerClient, err := self.connectMsgServer(ms)
+		pushServerClient, err := self.connectPushServer(ms)
 		if err != nil {
 			log.Error(err.Error())
 			go self.subscribeChannels()
@@ -146,28 +146,28 @@ func (self *Monitor) subscribeChannels() error {
 		cmd.AddArg(protocol.SYSCTRL_API_SERVER)
 		cmd.AddArg(self.cfg.UUID)
 
-		err = msgServerClient.Send(libnet.Json(cmd))
+		err = pushServerClient.Send(libnet.Json(cmd))
 		if err != nil {
 			log.Error(err.Error())
 			go self.subscribeChannels()
 			continue
 		}
 		//通道订阅发送成功
-		self.MsgServerClientMap[ms] = new(msgServerClientState)
-		self.MsgServerClientMap[ms].Alive = true
-		self.MsgServerClientMap[ms].Valid = false
-		self.MsgServerClientMap[ms].ClientSessionNum = 0
-		self.MsgServerClientMap[ms].Session = msgServerClient
+		self.PushServerClientMap[ms] = new(pushServerClientState)
+		self.PushServerClientMap[ms].Alive = true
+		self.PushServerClientMap[ms].Valid = false
+		self.PushServerClientMap[ms].ClientSessionNum = 0
+		self.PushServerClientMap[ms].Session = pushServerClient
 
 		//开始处理 消息服务器-> 接入服务器 的数据
 		go func(ms string) {
-			// go self.removeMsgServer(ms)
-			err := self.handleMsgServerClient(msgServerClient)
+			// go self.removePushServer(ms)
+			err := self.handlePushServerClient(pushServerClient)
 			log.Infof("err=%s", err)
 			if err != nil {
-				// self.msgServerClientRWMutex.Lock()
-				// defer self.msgServerClientRWMutex.Unlock()
-				delete(self.MsgServerClientMap, ms)
+				// self.pushServerClientRWMutex.Lock()
+				// defer self.pushServerClientRWMutex.Unlock()
+				delete(self.PushServerClientMap, ms)
 				log.Info("delete ok")
 			}
 			go self.subscribeChannels()

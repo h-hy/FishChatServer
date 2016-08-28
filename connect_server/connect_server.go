@@ -21,9 +21,9 @@ import (
 	// "time"
 
 	// "github.com/oikomi/FishChatServer/connect_base"
-	"github.com/oikomi/FishChatServer/protocol"
 	"github.com/oikomi/FishChatServer/connect_libnet"
 	"github.com/oikomi/FishChatServer/log"
+	"github.com/oikomi/FishChatServer/protocol"
 	// "github.com/oikomi/FishChatServer/storage/redis_store"
 )
 
@@ -95,17 +95,21 @@ func main() {
 	// ms := NewMsgServer(cfg, rs)
 	ms := NewMsgServer(cfg)
 	ms.msgServerClientEmptyMutex.Lock()
-	ms.server, err = connect_libnet.Listen(cfg.TransportProtocols, cfg.Listen)  //监听服务端口等待客户端连接
+	ms.server, err = connect_libnet.Listen(cfg.TransportProtocols, cfg.Listen) //监听服务端口等待客户端连接
 	if err != nil {
 		panic(err)
 	}
 	log.Info("connect_server running at  ", ms.server.Listener().Addr().String())
 
 	ms.subscribeChannels() //连接到消息服务器
-	
-	go ms.scanDeadSession()	//清理无用session
-	
-	go ms.scanDeadClient()	//清理无用消息服务器
+
+	ms.subscribePushServerChannels() //连接到消息服务器
+
+	go ms.scanDeadSession() //清理无用session
+
+	go ms.scanDeadMsgClient() //清理无用消息服务器
+
+	go ms.scanDeadPushClient() //清理无用推送服务器
 
 	// go ms.sendMonitorData()
 
@@ -114,15 +118,15 @@ func main() {
 		session.AddCloseCallback(ms, func() {
 			//客户端下线，通知消息服务器
 			log.Info("AddCloseCallback callback")
-			if (session.IMEI != ""){
+			if session.IMEI != "" {
 				// ms.scanSessionMutex.Lock()
 				cmd := protocol.NewCmdSimple(protocol.ACTION_GO_OFFLINE_CMD)
-				cmd.Infos["IMEI"]=session.IMEI
+				cmd.Infos["IMEI"] = session.IMEI
 				pp := NewProtoProc(ms)
 				err = pp.procCheckMsgServer(session)
-				if err != nil{
+				if err != nil {
 					// ms.scanSessionMutex.Unlock()
-					return 
+					return
 				}
 				err = pp.procTransferMsgServer(cmd, session)
 				// ms.scanSessionMutex.Unlock()
@@ -131,5 +135,3 @@ func main() {
 		go handleSession(ms, session)
 	})
 }
-
-

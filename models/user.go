@@ -16,7 +16,7 @@ type User struct {
 	Telephone string
 	Ticket    string
 	Openid    string
-	Devices   []*Device `orm:"rel(m2m);rel_through(github.com/oikomi/FishChatServer/monitor/models.UserDevice)"`
+	Devices   []*Device `orm:"rel(m2m);rel_through(github.com/oikomi/FishChatServer/models.UserDevice)"`
 	isCache   bool      `orm:"-;default(false)"`
 }
 

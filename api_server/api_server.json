@@ -1,0 +1,14 @@
+{
+	"LogFile"            : "monitor.log",
+	"UUID"               : "21001",
+	"PushServerList"      : [
+			"127.0.0.1:19004"
+	],
+	"Redis"              : { 
+		"Addr"           : "127.0.0.1", 
+		"Port"           : ":6379",
+		"ConnectTimeout" : 2000,
+		"ReadTimeout"    : 1000,
+		"WriteTimeout"   : 1000
+	}
+}

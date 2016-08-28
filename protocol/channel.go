@@ -22,6 +22,7 @@ const (
 	SYSCTRL_SEND           = "/sysctrl/send"
 	SYSCTRL_MONITOR        = "/sysctrl/monitor"
 	SYSCTRL_API_SERVER     = "/sysctrl/api-server"
+	SYSCTRL_PUSH_SERVER    = "/sysctrl/push-server"
 	SYSCTRL_CONNECT_SERVER = "/sysctrl/connect-servevr"
 )
 

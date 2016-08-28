@@ -47,14 +47,19 @@ type msgServerClientState struct {
 	ClientSessionNum uint64
 }
 
+type pushServerClientState struct {
+	Session          *libnet.Session
+	Alive            bool
+	Valid            bool
+	ClientSessionNum uint64
+}
+
 type ConnectServer struct {
 	cfg                       *ConnectServerConfig
 	sessions                  connect_base.SessionMap
 	channels                  connect_base.ChannelMap
-	topics                    protocol.TopicMap
 	server                    *connect_libnet.Server
 	sessionCache              *redis_store.SessionCache
-	topicCache                *redis_store.TopicCache
 	offlineMsgCache           *redis_store.OfflineMsgCache
 	p2pStatusCache            *redis_store.P2pStatusCache
 	scanSessionMutex          sync.Mutex
@@ -64,17 +69,22 @@ type ConnectServer struct {
 	msgServerClientRWMutex    sync.RWMutex
 	msgServerClientNum        uint64
 	msgServerClientEmptyMutex sync.RWMutex
+
+	pushServerClientMap     map[string]*pushServerClientState
+	pushServerClientMutex   sync.Mutex
+	pushServerClientRWMutex sync.RWMutex
+	//	pushServerClientNum     uint64
 }
 
 // func NewMsgServer(cfg *ConnectServerConfig, rs *redis_store.RedisStore) *ConnectServer {
 func NewMsgServer(cfg *ConnectServerConfig) *ConnectServer {
 	return &ConnectServer{
-		cfg:                cfg,                                    //配置
-		msgServerClientMap: make(map[string]*msgServerClientState), //已经连接的消息服务器表
-		sessions:           make(connect_base.SessionMap),
-		channels:           make(connect_base.ChannelMap),
-		topics:             make(protocol.TopicMap),
-		server:             new(connect_libnet.Server),
+		cfg:                 cfg,                                     //配置
+		msgServerClientMap:  make(map[string]*msgServerClientState),  //已经连接的消息服务器表
+		pushServerClientMap: make(map[string]*pushServerClientState), //已经连接的推动服务器表
+		sessions:            make(connect_base.SessionMap),
+		channels:            make(connect_base.ChannelMap),
+		server:              new(connect_libnet.Server),
 		// sessionCache:    redis_store.NewSessionCache(rs),
 		// topicCache:      redis_store.NewTopicCache(rs),
 		// offlineMsgCache: redis_store.NewOfflineMsgCache(rs),

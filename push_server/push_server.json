@@ -1,0 +1,43 @@
+{
+	"LocalIP"                  : "127.0.0.1:19004",
+	"TransportProtocols"       : "tcp",
+	"Listen"                   : "0.0.0.0:19004",
+	"LogFile"                  : "push_server.log",
+	"UUID"                     : "19904",
+	"ScanDeadSessionTimeout"   : 180,
+	"Expire"                   : 100,
+
+	"MonitorBeatTime"          : 5,
+	
+	"MsgServerList"      : [
+			"127.0.0.1:19000"
+	],
+	"SessionManagerServerList" : [
+		"127.0.0.1:18000"
+	],
+	
+	"Redis"                    : { 
+		"Addr" : "127.0.0.1", 
+		"Port" : ":6379",
+		"ConnectTimeout" : 2000,
+		"ReadTimeout" : 1000,
+		"WriteTimeout" : 1000
+	},
+	
+	"Mysql"              : { 
+		"Addr"      : "127.0.0.1", 
+		"Port"      : "3306",
+		"User"      : "root",
+		"Password"  : "",
+		"Database"  : "watch",
+		"MaxOpenConn"  : 20,
+		"MaxOIdleConn"  : 10
+	},
+	
+	"AmapKey" : { 
+		"name"     : "watch_server", 
+		"key"      : "698028f2d74a36a25c5af5bea759b482"
+	}
+	
+}
+	

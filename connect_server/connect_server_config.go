@@ -20,6 +20,7 @@ import (
 	// "io/ioutil"
 	"encoding/json"
 	"time"
+
 	"github.com/oikomi/FishChatServer/log"
 )
 
@@ -33,44 +34,44 @@ type ConnectServerConfig struct {
 	Expire                   time.Duration
 	MonitorBeatTime          time.Duration
 	SessionManagerServerList []string
-	Redis struct { 
-		Addr string 
-		Port string
-		ConnectTimeout time.Duration
-		ReadTimeout time.Duration
-		WriteTimeout time.Duration
-	} 
-	Mongo struct { 
-		Addr           string 
+	Redis                    struct {
+		Addr           string
 		Port           string
-		User           string
-		Password       string
-	} 
-	MsgServerList      []string
-	UUID               string
+		ConnectTimeout time.Duration
+		ReadTimeout    time.Duration
+		WriteTimeout   time.Duration
+	}
+	Mongo struct {
+		Addr     string
+		Port     string
+		User     string
+		Password string
+	}
+	MsgServerList  []string
+	PushServerList []string
+	UUID           string
 }
 
 func NewConnectServerConfig(configfile string) *ConnectServerConfig {
 	return &ConnectServerConfig{
-		configfile : configfile,
+		configfile: configfile,
 	}
 }
 
-func (self *ConnectServerConfig)LoadConfig() error {
-  //   bytes, err := ioutil.ReadFile(self.configfile)
-  //   if err != nil {
-		// log.Error(err.Error())
-  //       return err
-  //   }
+func (self *ConnectServerConfig) LoadConfig() error {
+	//   bytes, err := ioutil.ReadFile(self.configfile)
+	//   if err != nil {
+	// log.Error(err.Error())
+	//       return err
+	//   }
 
-  //   if err := json.Unmarshal(bytes, &self); err != nil {
-		// log.Error(err.Error())
-  //       return err
-  //   }
+	//   if err := json.Unmarshal(bytes, &self); err != nil {
+	// log.Error(err.Error())
+	//       return err
+	//   }
 
-  //   return nil
+	//   return nil
 
-    
 	file, err := os.Open(self.configfile)
 	if err != nil {
 		log.Error(err.Error())
@@ -86,7 +87,7 @@ func (self *ConnectServerConfig)LoadConfig() error {
 	return nil
 }
 
-func (self *ConnectServerConfig)DumpConfig() {
-	//fmt.Printf("Mode: %s\nListen: %s\nServer: %s\nLogfile: %s\n", 
+func (self *ConnectServerConfig) DumpConfig() {
+	//fmt.Printf("Mode: %s\nListen: %s\nServer: %s\nLogfile: %s\n",
 	//cfg.Mode, cfg.Listen, cfg.Server, cfg.Logfile)
 }
